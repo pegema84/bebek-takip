@@ -11,6 +11,7 @@ const FB={
   messagingSenderId:"386088030461",
   appId:"1:386088030461:web:563d1e025a90fe2aab6e94"
 };
+const VERSION='1.1',BUILD='15 Kasım 2026';
 const FAM_KEY='bebektakip.family';
 const COLS=['events','meds','growth','vax','timers','meta'];
 let S={baby:{name:'',birth:''},events:[],meds:[],vax:{},growth:[],timers:{}};
@@ -365,7 +366,8 @@ function openSettings(){
   <button class="btn block" data-act="backup">Yedeği göster ve kopyala</button>
   <textarea id="s-backup" style="margin-top:10px" placeholder="Yedek metni burada görünür. Geri yüklemek için buraya yapıştır."></textarea>
   <button class="btn block" style="margin-top:10px" data-act="restore">Yapıştırılan yedeği geri yükle</button>
-  <button class="btn block ghost" style="margin-top:10px" data-act="close">Kapat</button>`);
+  <button class="btn block ghost" style="margin-top:10px" data-act="close">Kapat</button>
+  <div class="foot" style="text-align:center">Bebek Takip · Sürüm ${VERSION} · ${BUILD}</div>`);
 }
 
 /* ---------- eylemler ---------- */
