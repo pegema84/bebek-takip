@@ -12,9 +12,11 @@
 <meta name="apple-mobile-web-app-title" content="Bebek Takip">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>Bebek Takip</title>
+<script>try{var t=localStorage.getItem('bt_theme');if(t==='dark'||t==='light')document.documentElement.dataset.theme=t}catch(e){}</script>
 <style>
 :root{--bg:#fbf7f2;--card:#fff;--ink:#2b2a33;--mute:#7b7885;--line:#eee7df;--pri:#2f8478;--priInk:#fff;--feed:#e8923a;--diaper:#7b68d9;--sleep:#4a7fe0;--med:#d9566a;--ok:#2f8478;--warn:#c9741c;--bad:#cc3d49}
-@media(prefers-color-scheme:dark){:root{--bg:#16151b;--card:#221f29;--ink:#f1eff5;--mute:#a09dab;--line:#34313d;--pri:#4fb3a6;--priInk:#0c1a18;--feed:#f0a45c;--diaper:#a193f0;--sleep:#7aa5f5;--med:#ee7c8d;--ok:#4fb3a6;--warn:#e8a04c;--bad:#ef6671}}
+:root[data-theme=dark]{--bg:#16151b;--card:#221f29;--ink:#f1eff5;--mute:#a09dab;--line:#34313d;--pri:#4fb3a6;--priInk:#0c1a18;--feed:#f0a45c;--diaper:#a193f0;--sleep:#7aa5f5;--med:#ee7c8d;--ok:#4fb3a6;--warn:#e8a04c;--bad:#ef6671;color-scheme:dark}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#16151b;--card:#221f29;--ink:#f1eff5;--mute:#a09dab;--line:#34313d;--pri:#4fb3a6;--priInk:#0c1a18;--feed:#f0a45c;--diaper:#a193f0;--sleep:#7aa5f5;--med:#ee7c8d;--ok:#4fb3a6;--warn:#e8a04c;--bad:#ef6671;color-scheme:dark}}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 [hidden]{display:none!important}
 html,body{margin:0}

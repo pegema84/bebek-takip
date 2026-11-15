@@ -434,6 +434,14 @@ function openGrowth(id){
   <button class="btn pri block" style="margin-top:16px" data-act="saveGrowth" data-id="${id||''}">Kaydet</button>
   ${id?delBlock('delGrowth',id):''}`);
 }
+function themePref(){try{const t=localStorage.getItem('bt_theme');return t==='dark'||t==='light'?t:'auto';}catch(e){return 'auto';}}
+function applyTheme(){
+  const t=themePref(),r=document.documentElement;
+  if(t==='auto')delete r.dataset.theme;else r.dataset.theme=t;
+  const dk=t==='dark'||(t==='auto'&&matchMedia('(prefers-color-scheme: dark)').matches);
+  const m=document.querySelector('meta[name=theme-color]');if(m)m.content=dk?'#16151b':'#2f8478';
+}
+function setTheme(t){try{if(t==='auto')localStorage.removeItem('bt_theme');else localStorage.setItem('bt_theme',t);}catch(e){}applyTheme();}
 function openSettings(){
   openSheet(`<h3>⚙️ Bebek bilgileri</h3>
   <label>Adı</label><input type="text" id="s-name" value="${esc(S.baby.name)}" placeholder="Bebeğin adı">
@@ -449,6 +457,8 @@ function openSettings(){
   ${FID?`<h3 style="margin-top:26px">Bağlantı bilgisi</h3>
   <div class="card" style="font-size:13px;line-height:1.6;word-break:break-all">Sürüm: ${VERSION}<br>Çevrimiçi: ${navigator.onLine?'evet':'hayır'}<br>Ana ekran uygulaması: ${(matchMedia('(display-mode: standalone)').matches||navigator.standalone)?'evet':'hayır (tarayıcı)'}<br>Giriş: ${fauth&&fauth.currentUser?'var ('+esc(fauth.currentUser.uid.slice(0,6))+')':'yok'}<br>Aile kodu uzunluğu: ${FID.length}<br>Durum: ${esc(syncStatus())}<br>Hata: ${esc(syncError||'yok')} ${esc(lastErrMsg.slice(0,120))}<br>Alınan veri: ${esc([...got].join(', ')||'-')}</div>
   <button class="btn block" data-act="reconnect">Yeniden bağlan ve gönder</button>`:''}
+  <h3 style="margin-top:26px">Görünüm (bu telefon)</h3>
+  <div class="three" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">${[['auto','Otomatik'],['light','Açık'],['dark','Koyu']].map(([v,l])=>`<button class="btn${themePref()===v?' pri':''}" data-act="theme" data-v="${v}">${l}</button>`).join('')}</div>
   <h3 style="margin-top:26px">Yedek</h3>
   <div class="mute" style="font-size:14px;margin-bottom:8px">Telefon değiştirirsen ya da emin olmak istersen verileri kopyalayıp bir yere (not, e-posta) yapıştır.</div>
   <button class="btn block" data-act="backup">Yedeği göster ve kopyala</button>
@@ -469,6 +479,7 @@ function copyText(t){
 const H={
   tab(el){tab=el.dataset.v;render();scrollTo(0,0);},
   gear(){openSettings();},
+  theme(el){setTheme(el.dataset.v);document.querySelectorAll('[data-act=theme]').forEach(b=>b.classList.toggle('pri',b.dataset.v===el.dataset.v));},
   close(){closeSheet();},
   askDel(el){el.hidden=true;$('#delConfirm').hidden=false;},
   seg(el){sel[el.dataset.g]=el.dataset.v;el.parentElement.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b===el));
@@ -533,6 +544,7 @@ document.addEventListener('click',e=>{
 
 /* ---------- başlat ---------- */
 (function boot(){
+  applyTheme();matchMedia('(prefers-color-scheme: dark)').addEventListener&&matchMedia('(prefers-color-scheme: dark)').addEventListener('change',applyTheme);
   const m=location.hash.match(/^#f=([a-z0-9-]+)/i),h=m?cleanCode(m[1]):'';
   if(h.length>=20&&!getFamily())setFamily(h);
   if(m)history.replaceState(null,'',location.pathname+location.search);
