@@ -154,7 +154,7 @@ const gk=g=>g.k||g.m;
 
 /* ---------- ekranlar ---------- */
 let tab='today';
-const TABS=[['today','🏠','Bugün'],['med','💊','İlaç'],['vax','💉','Aşı'],['growth','📏','Büyüme']];
+const TABS=[['today','🏠','Bugün'],['med','💊','İlaç'],['vax','💉','Aşı'],['growth','📏','Büyüme'],['info','📖','Bilgi']];
 
 function evInfo(e){
   switch(e.type){
@@ -231,7 +231,7 @@ function avgCard(){
   const tk=todayStr(),t0=parseDate(tk),start=new Date(t0.getFullYear(),t0.getMonth(),t0.getDate()-avgN);
   const evs=S.events.filter(e=>e.type!=='med'&&e.t>=start&&e.t<t0);
   const days=new Set(evs.map(e=>dayKey(e.t))).size;
-  let h=`<h2>Günlük ortalama</h2><div class="card"><div class="row" style="margin-bottom:10px">${[3,7,14].map(n=>`<button class="btn sm${avgN===n?' pri':''}" style="flex:1" data-act="avgN" data-v="${n}">Son ${n} gün</button>`).join('')}</div>`;
+  let h=`<h2>Günlük ortalama · son ${avgN} gün</h2><div class="card"><div class="row" style="margin-bottom:10px">${[1,3,7,14].map(n=>`<button class="btn sm${avgN===n?' pri':''}" style="flex:1;padding:0 4px" data-act="avgN" data-v="${n}">${n} gün</button>`).join('')}</div>`;
   if(!days)return h+`<div class="mute" style="font-size:14px">Tamamlanmış gün kaydı olunca ortalama burada görünür (bugün hariç).</div></div>`;
   const br=evs.filter(e=>e.type==='breast'),bo=evs.filter(e=>e.type==='bottle'),di=evs.filter(e=>e.type==='diaper'),sl=evs.filter(e=>e.type==='sleep');
   const sum=(a,k)=>a.reduce((x,e)=>x+(e[k]||0),0);
@@ -353,6 +353,44 @@ function vVax(){
   return h;
 }
 
+/* ---------- bilgi menüsü ---------- */
+let infoTopic='';
+const MILES=[
+ ['Sosyal Gülümseme','Siz gülünce veya konuşunca gülümser.',2,2,'2. ay'],
+ ['Başını Dik Tutma','Kucakta desteklenirken başını kontrol eder.',2,4,'2–4. ay'],
+ ['Kahkaha Atma','Oyun sırasında kıkırdamaya başlar.',4,4,'4. ay'],
+ ['Oyuncaklara Uzanma','Yakınındaki nesnelere uzanır.',4,4,'4. ay'],
+ ['Dönme','Yüzüstünden sırtüstüne veya tersine döner.',4,6,'4–6. ay'],
+ ['Desteksiz Oturma','Uzun süre tek başına oturur.',6,9,'6–9. ay'],
+ ['Nesneyi Elden Ele Geçirme','Oyuncağı bir elinden diğerine aktarır.',6,6,'6. ay'],
+ ['İsmine Tepki Verme','Adı söylenince dönüp bakar.',9,9,'9. ay'],
+ ['“Ma-ma”, “Ba-ba” Heceleme','Ses dizilerini tekrar eder.',9,9,'9. ay'],
+ ['Emekleme','Elleri ve dizleri üzerinde ilerler.',7,10,'7–10. ay'],
+ ['Bay Bay Yapma','Biri giderken el sallar.',9,12,'9–12. ay'],
+ ['Tutunarak Ayağa Kalkma','Mobilyalardan destek alır.',9,12,'9–12. ay'],
+ ['Küçük Nesneleri Tutma','Baş ve işaret parmağını kullanır.',9,12,'9–12. ay'],
+ ['İlk Adımlar','Tek başına birkaç adım atar.',12,15,'12–15. ay'],
+ ['İlk Anlamlı Kelimeler','“Anne”, “baba” gibi kelimeleri anlamlı kullanır.',12,12,'12. ay']
+];
+function bodyMiles(){
+  const am=S.baby.birth?(Date.now()-parseDate(S.baby.birth))/864e5/30.4375:null;
+  let h=`<div class="foot" style="margin:0 4px 10px">Her bebek kendi hızında gelişir; aylar ortalama değerlerdir.${am!==null?' Bebeğinin şu anki dönemine denk gelenler <b>Şimdi</b> ile işaretli.':''}</div>`;
+  MILES.forEach((m,i)=>{
+    const now=am!==null&&am>=m[2]-.5&&am<=m[3]+.5;
+    h+=`<div class="item" style="${now?'border-color:var(--pri)':''}"><span class="ic" style="font-weight:700;color:var(--mute);font-size:16px">${i+1}</span><span class="tx"><b>${esc(m[0])}</b><small>${esc(m[1])}</small></span>${now?'<span class="tag ok" style="margin-right:6px">Şimdi</span>':''}<span class="tag mute">${m[4]}</span></div>`;
+  });
+  return h;
+}
+const INFO=[
+ {id:'miles',ic:'🧸',t:'Bebekler bunları ne zaman yapar?',sub:'Gelişim basamakları, ay ay',body:bodyMiles}
+];
+function vInfo(){
+  const t=INFO.find(x=>x.id===infoTopic);
+  if(t)return `<button class="btn sm ghost" data-act="infoBack" style="margin-bottom:6px">← Bilgi menüsü</button><h2 style="margin-top:8px">${t.ic} ${esc(t.t)}</h2>`+t.body();
+  let h=`<h2>📖 Bilgi menüsü</h2>`;
+  for(const x of INFO)h+=`<button class="item" data-act="infoOpen" data-id="${x.id}"><span class="ic">${x.ic}</span><span class="tx">${esc(x.t)}<small>${esc(x.sub)}</small></span><span class="tag mute">›</span></button>`;
+  return h;
+}
 function vGrowth(){
   const g=[...S.growth].sort((a,b)=>a.d.localeCompare(b.d));
   let h=`<button class="btn block pri" data-act="openGrowth" data-id="">+ Ölçüm ekle</button><h2>Kilo (kg)</h2>`;
@@ -381,7 +419,7 @@ function render(){
   if(!FID)v=vWelcome();
   else if(!ready)v=`<div class="card mute">Kayıtlar yükleniyor…</div>`;
   else if(authFail&&!got.size)v=`<div class="card hint"><b>İnternet gerekli</b><p>İlk açılışta bir kez internete bağlanmak gerekiyor. Bağlanınca kendiliğinden devam eder.</p></div>`;
-  else v=({today:vToday,med:vMed,vax:vVax,growth:vGrowth})[tab]();
+  else v=({today:vToday,med:vMed,vax:vVax,growth:vGrowth,info:vInfo})[tab]();
   if(syncError==='permission-denied')v=`<div class="card hint"><b>Veritabanı erişimi reddedildi</b><p>Firebase güvenlik kuralları yayınlanmamış ya da yanlış olabilir.</p></div>`+v;
   $('#view').innerHTML=v;
   $('#nav').innerHTML=FID?TABS.map(t=>`<button class="${t[0]===tab?'on':''}" data-act="tab" data-v="${t[0]}"><span>${t[1]}</span>${t[2]}</button>`).join(''):'';
@@ -503,6 +541,8 @@ function copyText(t){
 }
 const H={
   tab(el){tab=el.dataset.v;render();scrollTo(0,0);},
+  infoOpen(el){infoTopic=el.dataset.id;render();scrollTo(0,0);},
+  infoBack(){infoTopic='';render();scrollTo(0,0);},
   gear(){openSettings();},
   avgN(el){avgN=+el.dataset.v;render();},
   theme(el){setTheme(el.dataset.v);document.querySelectorAll('[data-act=theme]').forEach(b=>b.classList.toggle('pri',b.dataset.v===el.dataset.v));},
