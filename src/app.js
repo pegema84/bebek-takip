@@ -196,7 +196,7 @@ function vaxICS(){
     let d=u[0].due;const late=d<today;if(d<tom)d=tom;
     const end=new Date(d.getFullYear(),d.getMonth(),d.getDate()+1);
     evs.push(['BEGIN:VEVENT','UID:vax-'+gk(g)+'@bebek-takip','DTSTAMP:'+icsStamp(),'DTSTART;VALUE=DATE:'+icsDate(d),'DTEND;VALUE=DATE:'+icsDate(end),
-      'SUMMARY:'+icsEsc('💉 '+nm+' aşı zamanı: '+g.l),
+      'SUMMARY:'+icsEsc('💉 '+nm+(g.k?' özel aşı: ':' aşı zamanı: ')+g.l),
       'DESCRIPTION:'+icsEsc(u.map(i=>i.name).join(', ')+(late?' (gecikmiş, aile hekimini ara)':'')+((g.note||g.info)?' - '+(g.note||g.info):'')),
       'BEGIN:VALARM','ACTION:DISPLAY','DESCRIPTION:'+icsEsc('Aşı zamanı yaklaşıyor'),'TRIGGER:-PT15H','END:VALARM',
       'BEGIN:VALARM','ACTION:DISPLAY','DESCRIPTION:'+icsEsc('Bugün aşı günü'),'TRIGGER:PT9H','END:VALARM','END:VEVENT']);
@@ -320,7 +320,7 @@ function vVax(){
     for(const i of gi){
       const d=dd(i.due);
       const st=i.done?`<span class="tag ok">${fmtShort(parseDate(i.done))}</span>`:d<0?`<span class="tag bad">${-d} gün gecikti</span>`:d<=14?`<span class="tag warn">${d===0?'Bugün':d+' gün kaldı'}</span>`:`<span class="tag mute">${d>60?Math.round(d/30)+' ay':d+' gün'}</span>`;
-      h+=`<button class="item" data-act="openVax" data-id="${i.id}"><span class="check ${i.done?'on':''}">${i.done?'✓':''}</span><span class="tx">${esc(i.name)}</span>${st}</button>`;
+      h+=`<button class="item" data-act="openVax" data-id="${i.id}"><span class="check ${i.done?'on':''}">${i.done?'✓':''}</span><span class="tx">${esc(i.name)}${i.g.k?' <span class="tag warn" style="font-size:11px">özel</span>':''}</span>${st}</button>`;
     }
   }
   h+=`<button class="btn block" style="margin-top:14px" data-act="icsVax">📅 Aşı hatırlatmalarını takvime ekle</button>`;
@@ -420,7 +420,7 @@ function openMed(id){
 }
 function openVax(id){
   const it=vaxItems().find(x=>x.id===id);if(!it)return;
-  openSheet(`<h3>💉 ${esc(it.name)}</h3><div class="mute">${it.g.l} · önerilen: ${it.due?fmtDate(it.due):'—'}</div>
+  openSheet(`<h3>💉 ${esc(it.name)}</h3>${it.g.k?'<div class="warn" style="font-weight:600">Özel aşı (devlet takviminde yok, ücretli)</div>':''}<div class="mute">${it.g.l} · önerilen: ${it.due?fmtDate(it.due):'—'}</div>
   <label>Yapıldığı tarih</label><input type="date" id="v-date" value="${it.done||(it.due&&dayKey(it.due)<todayStr()?dayKey(it.due):todayStr())}">
   <button class="btn pri block" style="margin-top:16px" data-act="saveVax" data-id="${id}">${it.done?'Tarihi güncelle':'Yapıldı olarak işaretle'}</button>
   ${it.done?`<button class="btn block ghost" style="margin-top:10px" data-act="undoVax" data-id="${id}">Geri al</button>`:''}`);
