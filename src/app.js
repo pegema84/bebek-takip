@@ -11,7 +11,7 @@ const FB={
   messagingSenderId:"386088030461",
   appId:"1:386088030461:web:563d1e025a90fe2aab6e94"
 };
-const VERSION='1.1',BUILD='15 Kasım 2026';
+const VERSION='1.2',BUILD='15 Kasım 2026';
 const FAM_KEY='bebektakip.family';
 const COLS=['events','meds','growth','vax','timers','meta'];
 let S={baby:{name:'',birth:''},events:[],meds:[],vax:{},growth:[],timers:{}};
@@ -144,12 +144,71 @@ function evInfo(e){
   return {ic:'•',t:e.type,s:''};
 }
 
+function alertList(){
+  const out=[],now=Date.now();
+  if(S.baby.birth){
+    const items=vaxItems(),today=parseDate(todayStr());
+    VAX.forEach(g=>{
+      if(g.note)return;
+      const u=items.filter(i=>i.g===g&&!i.done);if(!u.length)return;
+      const d=Math.round((u[0].due-today)/864e5);
+      if(d<=14)out.push({tab:'vax',ic:'💉',t:g.l+': '+u.map(i=>i.name).join(', '),tag:d<0?(-d)+' gün gecikti':d===0?'Bugün':d+' gün kaldı',cls:d<0?'bad':'warn',d});
+    });
+  }
+  const late=medSlots().filter(s=>!s.ev&&s.due<now);
+  if(late.length)out.push({tab:'med',ic:'💊',t:late.length+' ilaç dozu gecikti',tag:late[0].m.name+(late.length>1?' +'+(late.length-1):''),cls:'warn',d:-0.5});
+  return out.sort((a,b)=>a.d-b.d).slice(0,3);
+}
+
+/* ---------- takvime ekleme (.ics) ---------- */
+const icsEsc=t=>String(t).replace(/\\/g,'\\\\').replace(/;/g,'\;').replace(/,/g,'\\,').replace(/\n/g,'\\n');
+function icsFold(l){const e=new TextEncoder();if(e.encode(l).length<=74)return l;let out='',cur='';for(const ch of l){if(e.encode(cur+ch).length>73){out+=cur+'\r\n ';cur=ch;}else cur+=ch;}return out+cur;}
+const icsDate=d=>d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate());
+const icsStamp=()=>new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d+/,'');
+function icsCal(evs){return ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Bebek Takip//TR','CALSCALE:GREGORIAN','METHOD:PUBLISH'].concat(...evs,['END:VCALENDAR']).map(icsFold).join('\r\n')+'\r\n';}
+function vaxICS(){
+  const items=vaxItems(),today=parseDate(todayStr()),tom=new Date(today.getFullYear(),today.getMonth(),today.getDate()+1),evs=[],nm=S.baby.name||'Bebek';
+  VAX.forEach(g=>{
+    const u=items.filter(i=>i.g===g&&!i.done);if(!u.length)return;
+    let d=u[0].due;const late=d<today;if(d<tom)d=tom;
+    const end=new Date(d.getFullYear(),d.getMonth(),d.getDate()+1);
+    evs.push(['BEGIN:VEVENT','UID:vax-'+g.m+'@bebek-takip','DTSTAMP:'+icsStamp(),'DTSTART;VALUE=DATE:'+icsDate(d),'DTEND;VALUE=DATE:'+icsDate(end),
+      'SUMMARY:'+icsEsc('💉 '+nm+' aşı zamanı: '+g.l),
+      'DESCRIPTION:'+icsEsc(u.map(i=>i.name).join(', ')+(late?' (gecikmiş, aile hekimini ara)':'')+(g.note?' - '+g.note:'')),
+      'BEGIN:VALARM','ACTION:DISPLAY','DESCRIPTION:'+icsEsc('Aşı zamanı yaklaşıyor'),'TRIGGER:-PT15H','END:VALARM',
+      'BEGIN:VALARM','ACTION:DISPLAY','DESCRIPTION:'+icsEsc('Bugün aşı günü'),'TRIGGER:PT9H','END:VALARM','END:VEVENT']);
+  });
+  return evs;
+}
+function medICS(){
+  const evs=[],now=new Date();
+  S.meds.filter(m=>!m.off).forEach(m=>(m.times||[]).forEach(t=>{
+    const [h,mi]=t.split(':').map(Number),st=new Date(now.getFullYear(),now.getMonth(),now.getDate(),h,mi);
+    if(st<now)st.setDate(st.getDate()+1);
+    const en=new Date(+st+10*60000),f=d=>icsDate(d)+'T'+pad(d.getHours())+pad(d.getMinutes())+'00';
+    evs.push(['BEGIN:VEVENT','UID:med-'+m.id+'-'+t.replace(':','')+'@bebek-takip','DTSTAMP:'+icsStamp(),'DTSTART:'+f(st),'DTEND:'+f(en),'RRULE:FREQ=DAILY',
+      'SUMMARY:'+icsEsc('💊 '+m.name+(m.dose?' · '+m.dose:'')),'DESCRIPTION:'+icsEsc('Bebek Takip ilaç hatırlatması'),
+      'BEGIN:VALARM','ACTION:DISPLAY','DESCRIPTION:'+icsEsc(m.name),'TRIGGER:PT0S','END:VALARM','END:VEVENT']);
+  }));
+  return evs;
+}
+function saveICS(name,evs){
+  if(!evs.length)return flash('Takvime eklenecek bir şey yok');
+  const url=URL.createObjectURL(new Blob([icsCal(evs)],{type:'text/calendar;charset=utf-8'}));
+  const ios=/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+  if(ios){location.href=url;return;}
+  const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),30000);
+  flash('Dosya indi. Açıp takvime ekle');
+}
+
 function vToday(){
   const now=Date.now(),tk=todayStr();
   const all=[...S.events].sort((a,b)=>b.t-a.t);
   const today=all.filter(e=>dayKey(e.t)===tk);
   let h='';
   if(!S.baby.birth)h+=`<div class="card hint"><b>Başlayalım</b><p>Bebeğin adını ve doğum tarihini gir. Aşı takvimi buna göre hesaplanır.</p><button class="btn pri" data-act="gear">Bilgileri gir</button></div>`;
+  for(const a of alertList())h+=`<button class="item" data-act="tab" data-v="${a.tab}" style="border-color:var(--${a.cls==='bad'?'bad':'warn'})"><span class="ic">${a.ic}</span><span class="tx">${esc(a.t)}</span><span class="tag ${a.cls}">${esc(a.tag)}</span></button>`;
   for(const k of Object.keys(S.timers)){
     const t=S.timers[k];
     const lab=k==='breast'?'🤱 Emzirme'+(t.side?' · '+esc(t.side):''):'😴 Uyku';
@@ -210,7 +269,7 @@ function vMed(){
   h+=`<h2>İlaçlarım</h2>`;
   for(const m of S.meds)h+=`<button class="item" data-act="openMed" data-id="${m.id}"><span class="ic">${m.off?'⏸':'💊'}</span><span class="tx">${esc(m.name)}<small>${esc(m.dose||'')}${(m.times||[]).length?' · '+m.times.join(', '):' · gerektiğinde'}${m.off?' · kapalı':''}</small></span><span class="mute">›</span></button>`;
   h+=`<button class="btn block pri" data-act="openMed" data-id="">+ İlaç / vitamin ekle</button>`;
-  h+=`<div class="foot">Hatırlatma bildirimi henüz yok. Şimdilik saatler listede görünüyor, geciken dozlar turuncu işaretlenir.</div>`;
+  h+=`<button class="btn block" style="margin-top:12px" data-act="icsMed">📅 İlaç saatlerini takvime ekle</button><div class="foot">Takvimde her gün tekrarlanır ve alarm çalar. Bir ilacı bırakırsan o etkinliği takvimden de silmen gerekir. Geciken dozlar burada ve Bugün ekranında turuncu görünür.</div>`;
   return h;
 }
 
@@ -239,6 +298,7 @@ function vVax(){
       h+=`<button class="item" data-act="openVax" data-id="${i.id}"><span class="check ${i.done?'on':''}">${i.done?'✓':''}</span><span class="tx">${esc(i.name)}</span>${st}</button>`;
     }
   }
+  h+=`<button class="btn block" style="margin-top:14px" data-act="icsVax">📅 Aşı hatırlatmalarını takvime ekle</button>`;
   h+=`<div class="foot">Takvim, T.C. Sağlık Bakanlığı ulusal çocukluk dönemi aşı takvimine göre hazırlandı (altılı karma aşı Nisan 2025'ten beri geçerli). Tarihler yaklaşıktır, kesin randevuyu aile hekimin verir.</div>`;
   return h;
 }
@@ -428,6 +488,8 @@ const H={
     S.vax=Object.assign({},o.vax||{},S.vax);
     if(o.baby&&(o.baby.name||o.baby.birth)&&!(S.baby.name||S.baby.birth))S.baby=o.baby;
     save();closeSheet();render();flash('Geri yüklendi');}catch(e){flash('Yedek metni okunamadı');}},
+  icsVax(){saveICS('bebek-asi-takvimi.ics',vaxICS());},
+  icsMed(){saveICS('bebek-ilac-takvimi.ics',medICS());},
   createFam(){setFamily(newCode());location.reload();},
   joinFam(){const c=cleanCode($('#j-code').value);if(c.length<20)return flash('Kod eksik ya da hatalı');setFamily(c);location.reload();},
   leaveFam(){setFamily('');location.reload();},
