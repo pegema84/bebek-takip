@@ -11,11 +11,11 @@ const FB={
   messagingSenderId:"386088030461",
   appId:"1:386088030461:web:563d1e025a90fe2aab6e94"
 };
-const VERSION='1.2',BUILD='15 Kasım 2026';
+const VERSION='1.3',BUILD='15 Kasım 2026';
 const FAM_KEY='bebektakip.family';
 const COLS=['events','meds','growth','vax','timers','meta'];
 let S={baby:{name:'',birth:''},events:[],meds:[],vax:{},growth:[],timers:{}};
-let FID='',fdb=null,fauth=null,ready=false,listening=false,syncError='',authFail=false;
+let FID='',fdb=null,fauth=null,ready=false,syncError='',authFail=false,unsubs=[],lastUid='',lastErrMsg='',reauthN=0;
 const shadow=new Map(),got=new Set(),pend={};
 let memFam='';
 function getFamily(){try{return localStorage.getItem(FAM_KEY)||memFam;}catch(e){return memFam;}}
@@ -42,7 +42,7 @@ function save(){
   for(let i=0;i<ops.length;i+=400){
     const b=writeBatch(fdb);
     ops.slice(i,i+400).forEach(([t,k,v])=>{const [c,id]=k.split('/'),r=doc(fdb,'families',FID,c,id);if(t==='set')b.set(r,JSON.parse(JSON.stringify(v)));else b.delete(r);});
-    b.commit().catch(e=>{syncError=e&&e.code||'hata';render();});
+    b.commit().catch(e=>{syncError=e&&e.code||'hata';lastErrMsg=e&&e.message||'';if(syncError==='permission-denied')onDenied();render();});
   }
 }
 function applySnap(c,snap){
@@ -59,21 +59,32 @@ function applySnap(c,snap){
   got.add(c);if(got.size===COLS.length)ready=true;
   render();
 }
-function listen(){
+function relisten(){
+  unsubs.forEach(f=>{try{f();}catch(e){}});unsubs=[];
   const d=new Date();d.setHours(0,0,0,0);const since=+d-90*864e5;
   COLS.forEach(c=>{
     const base=collection(fdb,'families',FID,c);
     const q=c==='events'?query(base,where('t','>=',since)):base;
-    onSnapshot(q,{includeMetadataChanges:true},snap=>applySnap(c,snap),err=>{syncError=err&&err.code||'hata';render();});
+    unsubs.push(onSnapshot(q,{includeMetadataChanges:true},snap=>applySnap(c,snap),err=>{syncError=err&&err.code||'hata';lastErrMsg=err&&err.message||'';if(syncError==='permission-denied')onDenied();render();}));
   });
 }
+function reauth(){
+  if(!fauth)return;
+  fauth.signOut().then(()=>signInAnonymously(fauth)).catch(()=>{authFail=true;render();});
+}
+function onDenied(){if(reauthN<2){reauthN++;reauth();}}
 function startSync(){
   const app=initializeApp(FB);
   try{fdb=initializeFirestore(app,{localCache:persistentLocalCache({tabManager:persistentMultipleTabManager()})});}
   catch(e){fdb=getFirestore(app);}
   fauth=getAuth(app);
-  const signIn=()=>signInAnonymously(fauth).then(()=>{authFail=false;},()=>{authFail=true;render();});
-  onAuthStateChanged(fauth,u=>{if(u){authFail=false;if(!listening){listening=true;listen();}}else signIn();});
+  const signIn=()=>signInAnonymously(fauth).then(()=>{authFail=false;},e=>{authFail=true;lastErrMsg=e&&e.code||'';render();});
+  onAuthStateChanged(fauth,u=>{
+    if(u){
+      authFail=false;
+      if(u.uid!==lastUid){const prev=lastUid;lastUid=u.uid;relisten();if(prev)setTimeout(()=>{shadow.clear();save();},2500);}
+    }else signIn();
+  });
   addEventListener('online',()=>{if(!fauth.currentUser)signIn();render();});
   addEventListener('offline',render);
   setTimeout(()=>{if(!ready){ready=true;render();}},3500);
@@ -421,6 +432,9 @@ function openSettings(){
   <label>Başka bir aile koduna katıl</label><input type="text" id="j-code" autocapitalize="off" autocomplete="off" placeholder="xxxx-xxxx-...">
   <button class="btn block" style="margin-top:10px" data-act="joinFam">Bu koda geç</button>
   <div style="margin-top:10px"><button class="btn block ghost bad" data-act="askDel">Bu telefondan çık</button><div id="delConfirm" hidden><div class="two"><button class="btn danger" data-act="leaveFam">Evet, çık</button><button class="btn" data-act="close">Vazgeç</button></div></div></div>`:''}
+  ${FID?`<h3 style="margin-top:26px">Bağlantı bilgisi</h3>
+  <div class="card" style="font-size:13px;line-height:1.6;word-break:break-all">Sürüm: ${VERSION}<br>Çevrimiçi: ${navigator.onLine?'evet':'hayır'}<br>Ana ekran uygulaması: ${(matchMedia('(display-mode: standalone)').matches||navigator.standalone)?'evet':'hayır (tarayıcı)'}<br>Giriş: ${fauth&&fauth.currentUser?'var ('+esc(fauth.currentUser.uid.slice(0,6))+')':'yok'}<br>Aile kodu uzunluğu: ${FID.length}<br>Durum: ${esc(syncStatus())}<br>Hata: ${esc(syncError||'yok')} ${esc(lastErrMsg.slice(0,120))}<br>Alınan veri: ${esc([...got].join(', ')||'-')}</div>
+  <button class="btn block" data-act="reconnect">Yeniden bağlan ve gönder</button>`:''}
   <h3 style="margin-top:26px">Yedek</h3>
   <div class="mute" style="font-size:14px;margin-bottom:8px">Telefon değiştirirsen ya da emin olmak istersen verileri kopyalayıp bir yere (not, e-posta) yapıştır.</div>
   <button class="btn block" data-act="backup">Yedeği göster ve kopyala</button>
@@ -490,6 +504,7 @@ const H={
     save();closeSheet();render();flash('Geri yüklendi');}catch(e){flash('Yedek metni okunamadı');}},
   icsVax(){saveICS('bebek-asi-takvimi.ics',vaxICS());},
   icsMed(){saveICS('bebek-ilac-takvimi.ics',medICS());},
+  reconnect(){reauthN=0;syncError='';lastErrMsg='';reauth();flash('Yeniden bağlanıyor…');closeSheet();render();},
   createFam(){setFamily(newCode());location.reload();},
   joinFam(){const c=cleanCode($('#j-code').value);if(c.length<20)return flash('Kod eksik ya da hatalı');setFamily(c);location.reload();},
   leaveFam(){setFamily('');location.reload();},
