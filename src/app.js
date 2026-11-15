@@ -11,7 +11,7 @@ const FB={
   messagingSenderId:"386088030461",
   appId:"1:386088030461:web:563d1e025a90fe2aab6e94"
 };
-const VERSION='1.3',BUILD='15 Kasım 2026';
+const VERSION='1.4',BUILD='15 Kasım 2026';
 const FAM_KEY='bebektakip.family';
 const COLS=['events','meds','growth','vax','timers','meta'];
 let S={baby:{name:'',birth:''},events:[],meds:[],vax:{},growth:[],timers:{}};
@@ -133,12 +133,24 @@ const VAX=[
  {m:2, l:'2. ay sonu',v:['BCG (verem)','KPA (pnömokok) 1. doz','Altılı karma 1. doz']},
  {m:4, l:'4. ay sonu',v:['KPA 2. doz','Altılı karma 2. doz']},
  {m:6, l:'6. ay sonu',v:['Altılı karma 3. doz','OPA (oral çocuk felci) 1. doz']},
- {m:9, l:'9. ay sonu',v:['KKK ek doz'],note:'Bazı kaynaklarda var, bazılarında yok. Aile hekimine sor.'},
+ {m:9, l:'9. ay sonu',v:['KKK ek doz'],note:'Bakanlık kartında ek doz olarak geçiyor. Aile hekimiyle teyit et.'},
  {m:12,l:'12. ay sonu',v:['KPA pekiştirme','KKK 1. doz','Suçiçeği 1. doz']},
  {m:18,l:'18. ay sonu',v:['Altılı karma pekiştirme','OPA 2. doz','Hepatit A 1. doz']},
  {m:24,l:'24. ay sonu',v:['Hepatit A 2. doz']},
  {m:48,l:'48. ay (4 yaş)',v:['KKK 2. doz','DaBT-İPA pekiştirme','Suçiçeği 2. doz']}
 ];
+/* doktorun önerdiği takvim dışı (özel) aşılar */
+const VOPT=[
+ {k:'o2', m:2, l:'Özel · 2. ay',v:['Rotarix (rotavirüs) 1. doz'],info:'100. günden önce başlanmalı (son gün 24 Aralık 2026). Doktorun planı: 2. ve 4. ay ya da 3. ve 5. ay. Hangisini seçtiysen yapıldığı tarihi gir.'},
+ {k:'o3', m:3, l:'Özel · 3. ay',v:['Bexsero (menenjit) 1. doz','Nimenrix (menenjit) 1. doz'],info:'Reçetede Bexsero ve Nimenrix için 3., 5. ve 15. ay yazıyor.'},
+ {k:'o4', m:4, l:'Özel · 4. ay',v:['Rotarix (rotavirüs) 2. doz']},
+ {k:'o5', m:5, l:'Özel · 5. ay',v:['Bexsero (menenjit) 2. doz','Nimenrix (menenjit) 2. doz']},
+ {k:'o8', m:8, l:'Özel · en geç 8. ay',v:['Beyfortus (RSV)'],note:'Doktor ilk 8 ay içinde yazdı. Tam zamanı doktora sor, sonra tarihi gir.'},
+ {k:'o13',m:13,l:'Özel · grip (tahmini)',v:['Grip aşısı'],note:'Doktor önerdi, zamanı belli değil. Tarih tahminidir, doktora sor.'},
+ {k:'o15',m:15,l:'Özel · 15. ay',v:['Bexsero (menenjit) 3. doz','Nimenrix (menenjit) 3. doz']}
+];
+const ALLV=[...VAX,...VOPT].sort((a,b)=>a.m-b.m);
+const gk=g=>g.k||g.m;
 
 /* ---------- ekranlar ---------- */
 let tab='today';
@@ -159,7 +171,7 @@ function alertList(){
   const out=[],now=Date.now();
   if(S.baby.birth){
     const items=vaxItems(),today=parseDate(todayStr());
-    VAX.forEach(g=>{
+    ALLV.forEach(g=>{
       if(g.note)return;
       const u=items.filter(i=>i.g===g&&!i.done);if(!u.length)return;
       const d=Math.round((u[0].due-today)/864e5);
@@ -179,13 +191,13 @@ const icsStamp=()=>new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d+/,
 function icsCal(evs){return ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Bebek Takip//TR','CALSCALE:GREGORIAN','METHOD:PUBLISH'].concat(...evs,['END:VCALENDAR']).map(icsFold).join('\r\n')+'\r\n';}
 function vaxICS(){
   const items=vaxItems(),today=parseDate(todayStr()),tom=new Date(today.getFullYear(),today.getMonth(),today.getDate()+1),evs=[],nm=S.baby.name||'Bebek';
-  VAX.forEach(g=>{
+  ALLV.forEach(g=>{
     const u=items.filter(i=>i.g===g&&!i.done);if(!u.length)return;
     let d=u[0].due;const late=d<today;if(d<tom)d=tom;
     const end=new Date(d.getFullYear(),d.getMonth(),d.getDate()+1);
-    evs.push(['BEGIN:VEVENT','UID:vax-'+g.m+'@bebek-takip','DTSTAMP:'+icsStamp(),'DTSTART;VALUE=DATE:'+icsDate(d),'DTEND;VALUE=DATE:'+icsDate(end),
+    evs.push(['BEGIN:VEVENT','UID:vax-'+gk(g)+'@bebek-takip','DTSTAMP:'+icsStamp(),'DTSTART;VALUE=DATE:'+icsDate(d),'DTEND;VALUE=DATE:'+icsDate(end),
       'SUMMARY:'+icsEsc('💉 '+nm+' aşı zamanı: '+g.l),
-      'DESCRIPTION:'+icsEsc(u.map(i=>i.name).join(', ')+(late?' (gecikmiş, aile hekimini ara)':'')+(g.note?' - '+g.note:'')),
+      'DESCRIPTION:'+icsEsc(u.map(i=>i.name).join(', ')+(late?' (gecikmiş, aile hekimini ara)':'')+((g.note||g.info)?' - '+(g.note||g.info):'')),
       'BEGIN:VALARM','ACTION:DISPLAY','DESCRIPTION:'+icsEsc('Aşı zamanı yaklaşıyor'),'TRIGGER:-PT15H','END:VALARM',
       'BEGIN:VALARM','ACTION:DISPLAY','DESCRIPTION:'+icsEsc('Bugün aşı günü'),'TRIGGER:PT9H','END:VALARM','END:VEVENT']);
   });
@@ -286,7 +298,7 @@ function vMed(){
 
 function vaxItems(){
   const b=S.baby.birth?parseDate(S.baby.birth):null,out=[];
-  VAX.forEach(g=>g.v.forEach((name,i)=>{const id=g.m+'-'+i;out.push({id,g,name,done:S.vax[id]||null,due:b?addMonths(b,g.m):null});}));
+  ALLV.forEach(g=>g.v.forEach((name,i)=>{const id=gk(g)+'-'+i;out.push({id,g,name,done:S.vax[id]||null,due:b?addMonths(b,g.m):null});}));
   return out;
 }
 function vVax(){
@@ -294,15 +306,17 @@ function vVax(){
   const items=vaxItems(),today=parseDate(todayStr());
   const dd=d=>Math.round((d-today)/864e5);
   let h='';
-  const nextG=VAX.find(g=>items.some(i=>i.g===g&&!i.done));
+  const nextG=ALLV.find(g=>items.some(i=>i.g===g&&!i.done));
   if(nextG){
     const it=items.filter(i=>i.g===nextG&&!i.done),d=dd(it[0].due);
     h+=`<div class="card next"><div class="mute" style="font-size:13px">Sıradaki aşılar</div><b>${nextG.l}</b> · ${fmtDate(it[0].due)}<div class="${d<0?'bad':d<=14?'warn':'mute'}" style="font-weight:600;margin-top:2px">${d<0?-d+' gün gecikti':d===0?'Bugün':d+' gün kaldı'}</div><div style="margin-top:6px">${it.map(i=>esc(i.name)).join(' · ')}</div></div>`;
   }else h+=`<div class="card next"><b>Takvimdeki tüm aşılar tamam 🎉</b></div>`;
-  for(const g of VAX){
+  let optHead=false;
+  for(const g of [...VAX,...VOPT]){
+    if(g.k&&!optHead){optHead=true;h+=`<h2 style="margin-top:22px">🩺 Doktorun önerdiği özel aşılar</h2><div class="foot" style="margin-top:-4px">Bunlar ulusal takvimde yok, doktorun reçetesine göre eklendi.</div>`;}
     const gi=items.filter(i=>i.g===g);
     h+=`<h2>${g.l} · ${fmtShort(gi[0].due)} ${gi[0].due.getFullYear()}</h2>`;
-    if(g.note)h+=`<div class="foot" style="margin-top:-4px">${g.note}</div>`;
+    if(g.note||g.info)h+=`<div class="foot" style="margin-top:-4px">${g.note||g.info}</div>`;
     for(const i of gi){
       const d=dd(i.due);
       const st=i.done?`<span class="tag ok">${fmtShort(parseDate(i.done))}</span>`:d<0?`<span class="tag bad">${-d} gün gecikti</span>`:d<=14?`<span class="tag warn">${d===0?'Bugün':d+' gün kaldı'}</span>`:`<span class="tag mute">${d>60?Math.round(d/30)+' ay':d+' gün'}</span>`;
