@@ -13,8 +13,8 @@ const FB={
 };
 const VERSION='1.4',BUILD='15 Kasım 2026';
 const FAM_KEY='bebektakip.family';
-const COLS=['events','meds','growth','vax','timers','meta'];
-let S={baby:{name:'',birth:''},events:[],meds:[],vax:{},growth:[],timers:{}};
+const COLS=['events','meds','growth','vax','timers','meta','appts','notes'];
+let S={baby:{name:'',birth:''},events:[],meds:[],vax:{},growth:[],timers:{},appts:[],notes:[]};
 let FID='',fdb=null,fauth=null,ready=false,syncError='',authFail=false,unsubs=[],lastUid='',lastErrMsg='',reauthN=0;
 const shadow=new Map(),got=new Set(),pend={};
 let memFam='';
@@ -29,6 +29,8 @@ function currentMap(){
   S.events.forEach(e=>m.set('events/'+e.id,e));
   S.meds.forEach(e=>m.set('meds/'+e.id,e));
   S.growth.forEach(e=>m.set('growth/'+e.id,e));
+  S.appts.forEach(e=>m.set('appts/'+e.id,e));
+  S.notes.forEach(e=>m.set('notes/'+e.id,e));
   Object.entries(S.vax).forEach(([k,v])=>m.set('vax/'+k,{d:v}));
   Object.entries(S.timers).forEach(([k,v])=>m.set('timers/'+k,v));
   if(S.baby.name||S.baby.birth)m.set('meta/baby',S.baby);
@@ -52,6 +54,8 @@ function applySnap(c,snap){
   if(c==='events')S.events=docs.map(x=>Object.assign({},x.data,{id:x.id}));
   else if(c==='meds')S.meds=docs.map(x=>Object.assign({},x.data,{id:x.id}));
   else if(c==='growth')S.growth=docs.map(x=>Object.assign({},x.data,{id:x.id}));
+  else if(c==='appts')S.appts=docs.map(x=>Object.assign({},x.data,{id:x.id}));
+  else if(c==='notes')S.notes=docs.map(x=>Object.assign({},x.data,{id:x.id}));
   else if(c==='vax'){S.vax={};docs.forEach(x=>{S.vax[x.id]=x.data.d;});}
   else if(c==='timers'){S.timers={};docs.forEach(x=>{S.timers[x.id]=x.data;});}
   else if(c==='meta'){const b=docs.find(x=>x.id==='baby');S.baby=Object.assign({name:'',birth:''},b?b.data:{});}
@@ -178,9 +182,14 @@ function alertList(){
       if(d<=14)out.push({tab:'vax',ic:'💉',t:g.l+': '+u.map(i=>i.name).join(', '),tag:d<0?(-d)+' gün gecikti':d===0?'Bugün':d+' gün kaldı',cls:d<0?'bad':'warn',d});
     });
   }
+  S.appts.forEach(a=>{
+    const d=(a.t-Date.now())/864e5;
+    if(d>-0.05&&d<=2){const dk=Math.round((parseDate(dayKey(a.t))-parseDate(todayStr()))/864e5);
+      out.push({tab:'info',topic:'appt',ic:'🩺',t:(a.title||'Muayene')+' · '+hm(a.t)+(a.place?' · '+a.place:''),tag:dk<=0?'Bugün':dk===1?'Yarın':dk+' gün kaldı',cls:'warn',d:dk-0.9});}
+  });
   const late=medSlots().filter(s=>!s.ev&&s.due<now);
   if(late.length)out.push({tab:'med',ic:'💊',t:late.length+' ilaç dozu gecikti',tag:late[0].m.name+(late.length>1?' +'+(late.length-1):''),cls:'warn',d:-0.5});
-  return out.sort((a,b)=>a.d-b.d).slice(0,3);
+  return out.sort((a,b)=>a.d-b.d).slice(0,4);
 }
 
 /* ---------- takvime ekleme (.ics) ---------- */
@@ -255,7 +264,7 @@ function vToday(){
   const today=all.filter(e=>dayKey(e.t)===tk);
   let h='';
   if(!S.baby.birth)h+=`<div class="card hint"><b>Başlayalım</b><p>Bebeğin adını ve doğum tarihini gir. Aşı takvimi buna göre hesaplanır.</p><button class="btn pri" data-act="gear">Bilgileri gir</button></div>`;
-  for(const a of alertList())h+=`<button class="item" data-act="tab" data-v="${a.tab}" style="border-color:var(--${a.cls==='bad'?'bad':'warn'})"><span class="ic">${a.ic}</span><span class="tx">${esc(a.t)}</span><span class="tag ${a.cls}">${esc(a.tag)}</span></button>`;
+  for(const a of alertList())h+=`<button class="item" data-act="tab" data-v="${a.tab}"${a.topic?` data-topic="${a.topic}"`:''} style="border-color:var(--${a.cls==='bad'?'bad':'warn'})"><span class="ic">${a.ic}</span><span class="tx">${esc(a.t)}</span><span class="tag ${a.cls}">${esc(a.tag)}</span></button>`;
   for(const k of Object.keys(S.timers)){
     const t=S.timers[k];
     const lab=k==='breast'?'🤱 Emzirme'+(t.side?' · '+esc(t.side):''):'😴 Uyku';
@@ -381,14 +390,67 @@ function bodyMiles(){
   });
   return h;
 }
+const dtLong=t=>new Date(t).toLocaleDateString('tr-TR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+function vAppt(){
+  const now=Date.now(),all=[...S.appts].sort((a,b)=>a.t-b.t),up=all.filter(a=>a.t>=now-36e5),past=all.filter(a=>a.t<now-36e5).reverse();
+  let h=`<button class="btn pri block" data-act="openAppt" data-id="">+ Randevu ekle</button>`;
+  const row=(a,old)=>{const dk=Math.round((parseDate(dayKey(a.t))-parseDate(todayStr()))/864e5);
+    const tg=old?'':`<span class="tag ${dk<=2?'warn':'mute'}">${dk<=0?'Bugün':dk===1?'Yarın':dk+' gün'}</span>`;
+    return `<button class="item" data-act="openAppt" data-id="${a.id}"><span class="ic">🩺</span><span class="tx"><b>${esc(a.title||'Muayene')}</b><small>${esc(dtLong(a.t))} · ${hm(a.t)}${a.place?' · '+esc(a.place):''}</small></span>${tg}</button>`;};
+  h+=`<h2>Yaklaşan</h2>`;
+  if(!up.length)h+=`<div class="card mute">Yaklaşan randevu yok.</div>`;
+  up.forEach(a=>h+=row(a,false));
+  if(up.length)h+=`<button class="btn block" style="margin-top:6px" data-act="icsAppts">📅 Yaklaşan randevuları takvime ekle</button><div class="foot">Takvimde bir gün önce ve 2 saat önce alarm çalar.</div>`;
+  if(past.length){h+=`<h2>Geçmiş</h2>`;past.forEach(a=>h+=row(a,true));}
+  return h;
+}
+function openAppt(id){
+  const a=S.appts.find(x=>x.id===id)||{},d=a.t?new Date(a.t):null;
+  openSheet(`<h3>🩺 ${id?'Randevuyu düzenle':'Randevu ekle'}</h3>
+  <div class="two"><div><label>Tarih</label><input type="date" id="a-date" value="${d?dayKey(a.t):''}"></div><div><label>Saat</label><input type="time" id="a-time" value="${d?hm(a.t):'10:00'}"></div></div>
+  <label>Ne için</label><input type="text" id="a-title" value="${esc(a.title||'Muayene')}">
+  <div class="chips">${['Muayene','Kontrol','Aşı','Tahlil'].map(n=>`<button data-act="apptTitle" data-v="${n}">${n}</button>`).join('')}</div>
+  <label>Doktor / yer</label><input type="text" id="a-place" value="${esc(a.place||'')}" placeholder="Dr. ... / hastane">
+  <label>Not</label><textarea id="a-note" rows="3" placeholder="Götürülecekler, sorulacaklar">${esc(a.note||'')}</textarea>
+  <button class="btn pri block" style="margin-top:16px" data-act="saveAppt" data-id="${id||''}">Kaydet</button>
+  ${id?`<button class="btn block" style="margin-top:10px" data-act="icsAppt" data-id="${id}">📅 Takvime ekle</button>${delBlock('delAppt',id)}`:''}`);
+}
+function apptICS(list){
+  const nm=S.baby.name||'Bebek',f=x=>icsDate(x)+'T'+pad(x.getHours())+pad(x.getMinutes())+'00';
+  return list.map(a=>{const st=new Date(a.t),en=new Date(a.t+45*60000);
+    const e=['BEGIN:VEVENT','UID:appt-'+a.id+'@bebek-takip','DTSTAMP:'+icsStamp(),'DTSTART:'+f(st),'DTEND:'+f(en),'SUMMARY:'+icsEsc('🩺 '+nm+' '+(a.title||'Muayene'))];
+    if(a.place)e.push('LOCATION:'+icsEsc(a.place));
+    if(a.note)e.push('DESCRIPTION:'+icsEsc(a.note));
+    e.push('BEGIN:VALARM','ACTION:DISPLAY','DESCRIPTION:'+icsEsc('Yarın randevu var'),'TRIGGER:-P1D','END:VALARM','BEGIN:VALARM','ACTION:DISPLAY','DESCRIPTION:'+icsEsc('Randevuya 2 saat kaldı'),'TRIGGER:-PT2H','END:VALARM','END:VEVENT');
+    return e;});
+}
+function vNotes(){
+  const all=[...S.notes].sort((a,b)=>(b.d||'').localeCompare(a.d||'')||(b.c||0)-(a.c||0));
+  let h=`<button class="btn pri block" data-act="openNote" data-id="">+ Not ekle</button><div class="foot">Doktorun tavsiyelerini buraya yaz, ikiniz de görürsünüz.</div>`;
+  if(!all.length)h+=`<div class="card mute">Henüz not yok.</div>`;
+  all.forEach(n=>{const sn=(n.text||'').replace(/\s+/g,' ').slice(0,110);
+    h+=`<button class="item" data-act="openNote" data-id="${n.id}"><span class="ic">📝</span><span class="tx"><b>${esc(n.title||sn.slice(0,40)||'Not')}</b><small>${n.d?esc(fmtDate(parseDate(n.d))):''}${n.title&&sn?' · '+esc(sn):''}</small></span></button>`;});
+  return h;
+}
+function openNote(id){
+  const n=S.notes.find(x=>x.id===id)||{};
+  openSheet(`<h3>📝 ${id?'Notu düzenle':'Doktor notu ekle'}</h3>
+  <label>Tarih</label><input type="date" id="n-date" value="${n.d||todayStr()}">
+  <label>Başlık (isteğe bağlı)</label><input type="text" id="n-title" value="${esc(n.title||'')}" placeholder="Beslenme, ilaç, uyku…">
+  <label>Not</label><textarea id="n-text" rows="9" placeholder="Doktorun söyledikleri">${esc(n.text||'')}</textarea>
+  <button class="btn pri block" style="margin-top:16px" data-act="saveNote" data-id="${id||''}">Kaydet</button>
+  ${id?delBlock('delNote',id):''}`);
+}
 const INFO=[
+ {id:'appt',ic:'🩺',t:'Muayene randevuları',sub:()=>{const n=S.appts.filter(a=>a.t>=Date.now()-36e5).sort((a,b)=>a.t-b.t)[0];return n?'Sıradaki: '+fmtShort(n.t)+' '+hm(n.t):'Randevu ekle, takvime aktar';},body:vAppt},
+ {id:'notes',ic:'📝',t:'Doktor notları',sub:()=>S.notes.length?S.notes.length+' not':'Doktorun tavsiyeleri',body:vNotes},
  {id:'miles',ic:'🧸',t:'Bebekler bunları ne zaman yapar?',sub:'Gelişim basamakları, ay ay',body:bodyMiles}
 ];
 function vInfo(){
   const t=INFO.find(x=>x.id===infoTopic);
   if(t)return `<button class="btn sm ghost" data-act="infoBack" style="margin-bottom:6px">← Bilgi menüsü</button><h2 style="margin-top:8px">${t.ic} ${esc(t.t)}</h2>`+t.body();
   let h=`<h2>📖 Bilgi menüsü</h2>`;
-  for(const x of INFO)h+=`<button class="item" data-act="infoOpen" data-id="${x.id}"><span class="ic">${x.ic}</span><span class="tx">${esc(x.t)}<small>${esc(x.sub)}</small></span><span class="tag mute">›</span></button>`;
+  for(const x of INFO)h+=`<button class="item" data-act="infoOpen" data-id="${x.id}"><span class="ic">${x.ic}</span><span class="tx">${esc(x.t)}<small>${esc(typeof x.sub==='function'?x.sub():x.sub)}</small></span><span class="tag mute">›</span></button>`;
   return h;
 }
 function vGrowth(){
@@ -540,8 +602,24 @@ function copyText(t){
   try{navigator.clipboard.writeText(t).then(()=>flash('Kopyalandı'),()=>flash('Kopyalanamadı'));}catch(e){flash('Kopyalanamadı');}
 }
 const H={
-  tab(el){tab=el.dataset.v;render();scrollTo(0,0);},
+  tab(el){tab=el.dataset.v;if(el.dataset.topic!==undefined)infoTopic=el.dataset.topic;render();scrollTo(0,0);},
   infoOpen(el){infoTopic=el.dataset.id;render();scrollTo(0,0);},
+  openAppt(el){openAppt(el.dataset.id);},
+  apptTitle(el){$('#a-title').value=el.dataset.v;},
+  saveAppt(el){const dv=$('#a-date').value,tv=$('#a-time').value||'10:00';if(!dv)return flash('Tarihi gir');
+    const [y,mo,d]=dv.split('-').map(Number),[h,mi]=tv.split(':').map(Number),t=new Date(y,mo-1,d,h,mi).getTime();
+    const o={t,title:$('#a-title').value.trim()||'Muayene',place:$('#a-place').value.trim(),note:$('#a-note').value.trim()},id=el.dataset.id;
+    if(id){const a=S.appts.find(x=>x.id===id);if(a)Object.assign(a,o);}else S.appts.push(Object.assign({id:uid()},o));
+    save();closeSheet();render();flash('Kaydedildi');},
+  delAppt(el){S.appts=S.appts.filter(a=>a.id!==el.dataset.id);save();closeSheet();render();},
+  icsAppt(el){const a=S.appts.find(x=>x.id===el.dataset.id);if(a)saveICS('bebek-randevu.ics',apptICS([a]));},
+  icsAppts(){saveICS('bebek-randevular.ics',apptICS(S.appts.filter(a=>a.t>=Date.now()-36e5)));},
+  openNote(el){openNote(el.dataset.id);},
+  saveNote(el){const text=$('#n-text').value.trim();if(!text)return flash('Notu yaz');
+    const o={d:$('#n-date').value||todayStr(),title:$('#n-title').value.trim(),text},id=el.dataset.id;
+    if(id){const n=S.notes.find(x=>x.id===id);if(n)Object.assign(n,o);}else S.notes.push(Object.assign({id:uid(),c:Date.now()},o));
+    save();closeSheet();render();flash('Kaydedildi');},
+  delNote(el){S.notes=S.notes.filter(n=>n.id!==el.dataset.id);save();closeSheet();render();},
   infoBack(){infoTopic='';render();scrollTo(0,0);},
   gear(){openSettings();},
   avgN(el){avgN=+el.dataset.v;render();},
@@ -588,7 +666,7 @@ const H={
     try{navigator.clipboard.writeText(ta.value).then(()=>flash('Kopyalandı'),()=>flash('Metni elle kopyala'));}catch(e){flash('Metni elle kopyala');}},
   restore(){try{const o=JSON.parse($('#s-backup').value);if(!o||!Array.isArray(o.events))throw 0;
     const mg=(a,b)=>{const ids=new Set(a.map(x=>x.id));return a.concat((b||[]).filter(x=>x&&x.id&&!ids.has(x.id)));};
-    S.events=mg(S.events,o.events);S.meds=mg(S.meds,o.meds);
+    S.events=mg(S.events,o.events);S.meds=mg(S.meds,o.meds);S.appts=mg(S.appts,o.appts);S.notes=mg(S.notes,o.notes);
     S.growth=mg(S.growth,(o.growth||[]).map(g=>Object.assign({},g,{kg:g.kg>30?Math.round(g.kg)/1000:g.kg})));
     S.vax=Object.assign({},o.vax||{},S.vax);
     if(o.baby&&(o.baby.name||o.baby.birth)&&!(S.baby.name||S.baby.birth))S.baby=o.baby;
