@@ -225,6 +225,30 @@ function saveICS(name,evs){
   flash('Dosya indi. Açıp takvime ekle');
 }
 
+let avgN=7;
+const f1=x=>(Math.round(x*10)/10).toString().replace('.',',');
+function avgCard(){
+  const tk=todayStr(),t0=parseDate(tk),start=new Date(t0.getFullYear(),t0.getMonth(),t0.getDate()-avgN);
+  const evs=S.events.filter(e=>e.type!=='med'&&e.t>=start&&e.t<t0);
+  const days=new Set(evs.map(e=>dayKey(e.t))).size;
+  let h=`<h2>Günlük ortalama</h2><div class="card"><div class="row" style="margin-bottom:10px">${[3,7,14].map(n=>`<button class="btn sm${avgN===n?' pri':''}" style="flex:1" data-act="avgN" data-v="${n}">Son ${n} gün</button>`).join('')}</div>`;
+  if(!days)return h+`<div class="mute" style="font-size:14px">Tamamlanmış gün kaydı olunca ortalama burada görünür (bugün hariç).</div></div>`;
+  const br=evs.filter(e=>e.type==='breast'),bo=evs.filter(e=>e.type==='bottle'),di=evs.filter(e=>e.type==='diaper'),sl=evs.filter(e=>e.type==='sleep');
+  const sum=(a,k)=>a.reduce((x,e)=>x+(e[k]||0),0);
+  const fe=evs.filter(e=>e.type==='breast'||e.type==='bottle').map(e=>e.t).sort((a,b)=>a-b);
+  let gaps=[];for(let i=1;i<fe.length;i++){const g=fe[i]-fe[i-1];if(g<=12*36e5)gaps.push(g);}
+  const wet=di.filter(e=>e.kind!=='dirty').length,dirty=di.filter(e=>e.kind!=='wet').length;
+  const cell=(t,b,sm)=>`<div class="stat"><span>${t}</span><b>${b}</b>${sm?`<span>${sm}</span>`:''}</div>`;
+  h+=`<div class="stats" style="grid-template-columns:1fr 1fr">`+
+    cell('🤱 Emzirme',f1(br.length/days)+' kez',br.length?'ort. '+dur(sum(br,'dur')/br.length):'')+
+    cell('🍼 Biberon',f1(bo.length/days)+' kez · '+Math.round(sum(bo,'ml')/days)+' ml',bo.length?'ort. '+Math.round(sum(bo,'ml')/bo.length)+' ml / öğün':'')+
+    cell('🧷 Bez',f1(wet/days)+' ıslak · '+f1(dirty/days)+' kirli','günde')+
+    cell('😴 Uyku',sl.length?dur(sum(sl,'dur')/days):'—',sl.length?f1(sl.length/days)+' uyku · ort. '+dur(sum(sl,'dur')/sl.length):'')+
+    `</div>`;
+  if(gaps.length)h+=`<div class="stat" style="margin-top:8px"><span>Ortalama beslenme aralığı</span><b>${dur(gaps.reduce((a,b)=>a+b,0)/gaps.length)}</b></div>`;
+  h+=`<div class="foot" style="margin-top:8px">Kayıt girilen ${days} gün üzerinden, bugün hariç. Kayıt girmediğin günler hesaba katılmaz.</div></div>`;
+  return h;
+}
 function vToday(){
   const now=Date.now(),tk=todayStr();
   const all=[...S.events].sort((a,b)=>b.t-a.t);
@@ -259,6 +283,7 @@ function vToday(){
   h+=`<h2>Bugünün akışı</h2>`;
   if(!today.length)h+=`<div class="card mute">Bugün henüz kayıt yok. Yukarıdaki düğmelerle başla.</div>`;
   for(const e of today){const i=evInfo(e);h+=`<button class="item" data-act="openEv" data-id="${e.id}"><span class="ic">${i.ic}</span><span class="tx">${esc(i.t)}${i.s?`<small>${esc(i.s)}</small>`:''}</span><span class="tm2">${hm(e.t)}</span></button>`;}
+  h+=avgCard();
   return h;
 }
 
@@ -479,6 +504,7 @@ function copyText(t){
 const H={
   tab(el){tab=el.dataset.v;render();scrollTo(0,0);},
   gear(){openSettings();},
+  avgN(el){avgN=+el.dataset.v;render();},
   theme(el){setTheme(el.dataset.v);document.querySelectorAll('[data-act=theme]').forEach(b=>b.classList.toggle('pri',b.dataset.v===el.dataset.v));},
   close(){closeSheet();},
   askDel(el){el.hidden=true;$('#delConfirm').hidden=false;},
