@@ -11,7 +11,7 @@ const FB={
   messagingSenderId:"386088030461",
   appId:"1:386088030461:web:563d1e025a90fe2aab6e94"
 };
-const VERSION='2.0',BUILD='16 Kasım 2026';
+const VERSION='2.1',BUILD='17 Kasım 2026';
 const FAM_KEY='bebektakip.family';
 const COLS=['events','meds','growth','vax','timers','meta','appts','notes','qs'];
 let S={baby:{name:'',birth:''},events:[],meds:[],vax:{},growth:[],timers:{},appts:[],notes:[],qs:[]};
@@ -236,7 +236,7 @@ function evInfo(e){
   switch(e.type){
     case 'breast':return {ic:'🤱',t:'Emzirme'+(e.side?' · '+e.side:''),s:e.dur?dur(e.dur):''};
     case 'bottle':return {ic:'🍼',t:'Biberon · '+e.ml+' ml',s:e.kind||''};
-    case 'diaper':return {ic:e.kind==='wet'?'💧':e.kind==='dirty'?'💩':'💧',t:{wet:'Islak bez',dirty:'Kirli bez',both:'Islak + kirli bez'}[e.kind]||'Bez',s:e.color||''};
+    case 'diaper':return {ic:e.kind==='wet'?'💧':e.kind==='dirty'?'💩':'💧',t:{wet:'Çiş bezi',dirty:'Kaka bezi',both:'Çiş + kaka bezi'}[e.kind]||'Bez',s:e.color||''};
     case 'sleep':return {ic:'😴',t:'Uyku',s:e.dur?dur(e.dur):''};
     case 'med':return {ic:'💊',t:e.name||'İlaç',s:e.dose||''};
     case 'pump':return {ic:'🥛',t:'Sağım · '+e.ml+' ml',s:''};
@@ -337,9 +337,8 @@ function avgCard(){
   h+=`<div class="stats" style="grid-template-columns:1fr 1fr">`+
     cell('🍼 Biberon',f1(a.feedN)+' kez · '+Math.round(a.ml)+' ml',a.mlPer?'ort. '+Math.round(a.mlPer)+' ml / öğün':'')+
     cell('🥛 Tür',f1(a.bm)+' anne sütü · '+f1(a.fm)+' mama','günde')+
-    cell('🧷 Bez',f1(a.wet)+' ıslak · '+f1(a.dirty)+' kirli','günde')+
+    cell('🧷 Bez',f1(a.wet)+' çiş · '+f1(a.dirty)+' kaka','günde')+
     cell('😴 Uyku',a.slN?dur(a.slDay):'—',a.slN?f1(a.slN)+' uyku · ort. '+dur(a.slPer):'')+
-    (a.puN?cell('🥛 Sağım',Math.round(a.puMl)+' ml',f1(a.puN)+' kez · günde'):'')+
     (a.gap?cell('⏱ Beslenme aralığı',dur(a.gap),'ortalama'):'')+
     `</div>`;
   h+=`<div class="foot" style="margin-top:8px">Kayıt girilen ${a.days} gün üzerinden, bugün hariç. Kayıt girmediğin günler hesaba katılmaz.</div></div>`;
@@ -361,8 +360,7 @@ function vToday(){
     <button class="q bottle" data-act="qBottle" style="grid-column:span 2"><span>🍼</span>Biberon</button>
     <button class="q diaper" data-act="qDiaper"><span>🧷</span>Bez</button>
     <button class="q sleep" data-act="qSleep"><span>😴</span>Uyku</button>
-    <button class="q pump" data-act="qPump"><span>🥛</span>Sağım</button>
-    <button class="q temp" data-act="qTemp"><span>🌡️</span>Ateş</button></div>`;
+    <button class="q temp" data-act="qTemp" style="grid-column:span 2"><span>🌡️</span>Ateş</button></div>`;
   const lastB=all.find(e=>e.type==='bottle');
   if(isT&&lastB)h+=`<button class="btn block" style="margin:-2px 0 12px" data-act="repeatBottle">🔁 Aynısını şimdi kaydet: ${lastB.ml} ml ${esc(lastB.kind||'')}</button>`;
   const lastT=all.find(e=>e.type==='temp');
@@ -381,7 +379,7 @@ function vToday(){
   h+=`<div class="card"><div class="sum">
     <div><b>${br.length+bo.length}</b><span>beslenme</span></div>
     <div><b>${ml}</b><span>ml biberon</span></div>
-    <div><b>${wet}/${dirty}</b><span>ıslak/kirli</span></div>
+    <div><b>${wet}/${dirty}</b><span>çiş/kaka</span></div>
     <div><b>${slp?dur(slp).replace(' sa','s').replace(' dk','dk'):'0'}</b><span>uyku</span></div></div></div>`;
   h+=`<h2>${isT?'Bugünün':'Günün'} akışı</h2>`;
   const oldWait=needOld(vd);
@@ -704,9 +702,8 @@ function avgLines(a){
   const o=['Beslenme: günde '+f1(a.feedN)+' kez, toplam '+Math.round(a.ml)+' ml'+(a.mlPer?' (öğün başı '+Math.round(a.mlPer)+' ml)':''),
     'Tür: günde '+f1(a.bm)+' anne sütü, '+f1(a.fm)+' mama'];
   if(a.gap)o.push('Beslenme aralığı: ortalama '+dur(a.gap));
-  o.push('Bez: günde '+f1(a.wet)+' ıslak, '+f1(a.dirty)+' kirli');
+  o.push('Bez: günde '+f1(a.wet)+' çiş, '+f1(a.dirty)+' kaka');
   if(a.slN)o.push('Uyku: günde '+dur(a.slDay)+' ('+f1(a.slN)+' uyku)');
-  if(a.puN)o.push('Sağım: günde '+Math.round(a.puMl)+' ml');
   return o;
 }
 function docSections(){
@@ -811,7 +808,7 @@ function openTemp(){
 function openDiaper(){
   sel={};
   openSheet(`<h3>🧷 Bez</h3>
-  <div class="seg"><button data-act="seg" data-g="dk" data-v="wet">💧 Islak</button><button data-act="seg" data-g="dk" data-v="dirty">💩 Kirli</button><button data-act="seg" data-g="dk" data-v="both">💧💩 İkisi</button></div>
+  <div class="seg"><button data-act="seg" data-g="dk" data-v="wet">💧 Çiş</button><button data-act="seg" data-g="dk" data-v="dirty">💩 Kaka</button><button data-act="seg" data-g="dk" data-v="both">💧💩 İkisi</button></div>
   <div id="colorRow" hidden><label>Renk (isteğe bağlı)</label><div class="chips">${['Sarı','Yeşil','Kahverengi','Koyu'].map(c=>`<button data-act="col" data-v="${c}">${c}</button>`).join('')}</div></div>
   ${dtRow()}
   <button class="btn pri block" style="margin-top:16px" data-act="saveDiaper">Kaydet</button>`);
@@ -824,7 +821,7 @@ function openEv(id){
   if(e.type==='breast')f=seg('side',[['Sol','Sol'],['Sağ','Sağ']],e.side||'Sol')+`<label>Süre (dk)</label><input type="number" id="f-dur" inputmode="decimal" value="${e.dur?Math.round(e.dur/60000):''}">`;
   else if(e.type==='sleep')f='';
   else if(e.type==='bottle')f=seg('bk',[['Anne sütü','Anne sütü'],['Mama','Mama']],e.kind||'Anne sütü')+`<label>Miktar (ml)</label><input type="number" id="f-ml" inputmode="numeric" value="${e.ml||''}">`;
-  else if(e.type==='diaper')f=seg('dk',[['wet','💧 Islak'],['dirty','💩 Kirli'],['both','💧💩 İkisi']],e.kind)+`<div id="colorRow" ${e.kind==='wet'?'hidden':''}><label>Renk (isteğe bağlı)</label><div class="chips">${['Sarı','Yeşil','Kahverengi','Koyu'].map(c=>`<button class="${e.color===c?'on':''}" data-act="col" data-v="${c}">${c}</button>`).join('')}</div></div>`;
+  else if(e.type==='diaper')f=seg('dk',[['wet','💧 Çiş'],['dirty','💩 Kaka'],['both','💧💩 İkisi']],e.kind)+`<div id="colorRow" ${e.kind==='wet'?'hidden':''}><label>Renk (isteğe bağlı)</label><div class="chips">${['Sarı','Yeşil','Kahverengi','Koyu'].map(c=>`<button class="${e.color===c?'on':''}" data-act="col" data-v="${c}">${c}</button>`).join('')}</div></div>`;
   else if(e.type==='pump')f=`<label>Sağılan miktar (ml)</label><input type="number" id="f-ml" inputmode="numeric" value="${e.ml||''}">`;
   else if(e.type==='temp')f=`<label>Derece (°C)</label><input type="text" id="f-c" inputmode="decimal" value="${f1(e.c)}" data-inp="tempHint"><div id="tempHint" style="margin-top:8px;font-size:14px;font-weight:600"></div><label>Not</label><input type="text" id="f-note" value="${esc(e.note||'')}">`;
   else f=`<div class="mute">${esc(i.s||'')}</div>`;
@@ -975,7 +972,7 @@ const H={
   cancelTimer(el){delete S.timers[el.dataset.k];save();render();},
   saveSleep(){const r=sleepAt();if(!r)return;addEv({id:uid(),type:'sleep',t:r.t,dur:r.dur});save();closeSheet();render();flash('Kaydedildi');},
   saveBottle(){const ml=num($('#f-ml').value);if(!(ml>0))return flash('Miktarı gir');const t=tAt('f-time','f-date');if(t===null)return;addEv({id:uid(),type:'bottle',t,ml:Math.round(ml),kind:sel.bk||'Anne sütü'});save();closeSheet();render();flash('Kaydedildi');},
-  saveDiaper(){if(!sel.dk)return flash('Islak mı kirli mi seç');const t=tAt('f-time','f-date');if(t===null)return;const e={id:uid(),type:'diaper',t,kind:sel.dk};if(sel.col&&sel.dk!=='wet')e.color=sel.col;addEv(e);save();closeSheet();render();flash('Kaydedildi');},
+  saveDiaper(){if(!sel.dk)return flash('Çiş mi kaka mı seç');const t=tAt('f-time','f-date');if(t===null)return;const e={id:uid(),type:'diaper',t,kind:sel.dk};if(sel.col&&sel.dk!=='wet')e.color=sel.col;addEv(e);save();closeSheet();render();flash('Kaydedildi');},
   openEv(el){openEv(el.dataset.id);},
   saveEv(el){
     const e=S.events.find(x=>x.id===el.dataset.id);if(!e)return;
@@ -983,7 +980,7 @@ const H={
     const t=tAt('f-time','f-date');if(t===null)return;
     if(e.type==='breast'){const m=num($('#f-dur').value);if(!(m>0))return flash('Süreyi gir');e.dur=m*60000;e.side=sel.side||'Sol';}
     if(e.type==='bottle'){const ml=num($('#f-ml').value);if(!(ml>0))return flash('Miktarı gir');e.ml=Math.round(ml);e.kind=sel.bk||'Anne sütü';}
-    if(e.type==='diaper'){if(!sel.dk)return flash('Islak mı kirli mi seç');e.kind=sel.dk;if(sel.col&&sel.dk!=='wet')e.color=sel.col;else delete e.color;}
+    if(e.type==='diaper'){if(!sel.dk)return flash('Çiş mi kaka mı seç');e.kind=sel.dk;if(sel.col&&sel.dk!=='wet')e.color=sel.col;else delete e.color;}
     if(e.type==='pump'){const ml=num($('#f-ml').value);if(!(ml>0))return flash('Miktarı gir');e.ml=Math.round(ml);}
     if(e.type==='temp'){const c=tempVal();if(c===null)return;e.c=c;const n=$('#f-note').value.trim();if(n)e.note=n;else delete e.note;}
     e.t=t;keepOld(e);save();closeSheet();render();flash('Güncellendi');
