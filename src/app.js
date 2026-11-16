@@ -11,7 +11,7 @@ const FB={
   messagingSenderId:"386088030461",
   appId:"1:386088030461:web:563d1e025a90fe2aab6e94"
 };
-const VERSION='1.5',BUILD='16 Kasım 2026';
+const VERSION='1.6',BUILD='16 Kasım 2026';
 const FAM_KEY='bebektakip.family';
 const COLS=['events','meds','growth','vax','timers','meta','appts','notes'];
 let S={baby:{name:'',birth:''},events:[],meds:[],vax:{},growth:[],timers:{},appts:[],notes:[]};
@@ -119,6 +119,17 @@ const fmtShort=d=>new Date(d).toLocaleDateString('tr-TR',{day:'numeric',month:'s
 const num=v=>{const n=parseFloat(String(v).replace(',','.'));return isFinite(n)?n:NaN;};
 function parseDate(s){const [y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d);}
 function addMonths(d,n){const r=new Date(d.getFullYear(),d.getMonth()+n,1);const last=new Date(r.getFullYear(),r.getMonth()+1,0).getDate();r.setDate(Math.min(d.getDate(),last));return r;}
+let viewDay='';
+const vday=()=>viewDay||todayStr();
+function tAt(tid,did){
+  const dv=$('#'+did).value,tv=$('#'+tid).value;
+  const d=dv?parseDate(dv):new Date();
+  if(tv){const [h,m]=tv.split(':').map(Number);d.setHours(h,m,0,0);}else if(dv&&dv!==todayStr())d.setHours(12,0,0,0);else{const n=new Date();d.setHours(n.getHours(),n.getMinutes(),0,0);}
+  const t=d.getTime();
+  if(t>Date.now()+5*60000){flash('Gelecek bir tarih/saat girilemez');return null;}
+  return t;
+}
+const dtRow=t=>`<div class="two"><div><label>Tarih</label><input type="date" id="f-date" value="${t?dayKey(t):vday()}" max="${todayStr()}"></div><div><label>Saat</label><input type="time" id="f-time" value="${t?hm(t):nowHM()}"></div></div>`;
 function tFrom(id){const v=$('#'+id).value;if(!v)return Date.now();const [h,m]=v.split(':').map(Number);const d=new Date();d.setHours(h,m,0,0);if(d.getTime()>Date.now()+5*60000)d.setDate(d.getDate()-1);return d.getTime();}
 function ageText(){
   if(!S.baby.birth)return 'Doğum tarihi girilmedi';
@@ -261,7 +272,7 @@ function avgCard(){
 function vToday(){
   const now=Date.now(),tk=todayStr();
   const all=[...S.events].sort((a,b)=>b.t-a.t);
-  const today=all.filter(e=>dayKey(e.t)===tk);
+  const vd=vday(),isT=vd===tk,today=all.filter(e=>dayKey(e.t)===vd);
   let h='';
   if(!S.baby.birth)h+=`<div class="card hint"><b>Başlayalım</b><p>Bebeğin adını ve doğum tarihini gir. Aşı takvimi buna göre hesaplanır.</p><button class="btn pri" data-act="gear">Bilgileri gir</button></div>`;
   for(const a of alertList())h+=`<button class="item" data-act="tab" data-v="${a.tab}"${a.topic?` data-topic="${a.topic}"`:''} style="border-color:var(--${a.cls==='bad'?'bad':'warn'})"><span class="ic">${a.ic}</span><span class="tx">${esc(a.t)}</span><span class="tag ${a.cls}">${esc(a.tag)}</span></button>`;
@@ -282,6 +293,8 @@ function vToday(){
     <div class="stat"><span>Son beslenme</span><b>${lastFeed?ago(now-lastFeed.t):'—'}</b></div>
     <div class="stat"><span>Son bez</span><b>${lastD?ago(now-lastD.t):'—'}</b></div>
     <div class="stat"><span>Son kaka</span><b>${lastDirty?ago(now-lastDirty.t):'—'}</b></div></div>`;
+  const dl=isT?'Bugün':vd===dayKey(Date.now()-864e5)?'Dün · '+fmtShort(parseDate(vd)):fmtDate(parseDate(vd));
+  h+=`<div class="row" style="align-items:center;gap:8px;margin:14px 0 8px"><button class="btn sm" data-act="dayGo" data-v="-1" aria-label="Önceki gün">‹</button><label class="btn sm" style="flex:1;position:relative;margin:0;display:flex;align-items:center;justify-content:center">${dl}<input type="date" value="${vd}" max="${tk}" data-chg="dayPick" style="position:absolute;inset:0;opacity:0;width:100%"></label><button class="btn sm" data-act="dayGo" data-v="1" ${isT?'disabled':''} aria-label="Sonraki gün">›</button></div>`;
   const br=today.filter(e=>e.type==='breast'),bo=today.filter(e=>e.type==='bottle'),di=today.filter(e=>e.type==='diaper'),sl=today.filter(e=>e.type==='sleep');
   const ml=bo.reduce((s,e)=>s+(e.ml||0),0),wet=di.filter(e=>e.kind!=='dirty').length,dirty=di.filter(e=>e.kind!=='wet').length,slp=sl.reduce((s,e)=>s+(e.dur||0),0);
   h+=`<div class="card"><div class="sum">
@@ -289,8 +302,8 @@ function vToday(){
     <div><b>${ml}</b><span>ml biberon</span></div>
     <div><b>${wet}/${dirty}</b><span>ıslak/kirli</span></div>
     <div><b>${slp?dur(slp).replace(' sa','s').replace(' dk','dk'):'0'}</b><span>uyku</span></div></div></div>`;
-  h+=`<h2>Bugünün akışı</h2>`;
-  if(!today.length)h+=`<div class="card mute">Bugün henüz kayıt yok. Yukarıdaki düğmelerle başla.</div>`;
+  h+=`<h2>${isT?'Bugünün':'Günün'} akışı</h2>`;
+  if(!today.length)h+=`<div class="card mute">${isT?'Bugün henüz kayıt yok. Yukarıdaki düğmelerle başla.':'Bu günde kayıt yok.'}</div>`;
   for(const e of today){const i=evInfo(e);h+=`<button class="item" data-act="openEv" data-id="${e.id}"><span class="ic">${i.ic}</span><span class="tx">${esc(i.t)}${i.s?`<small>${esc(i.s)}</small>`:''}</span><span class="tm2">${hm(e.t)}</span></button>`;}
   h+=avgCard();
   return h;
@@ -501,14 +514,16 @@ function openBreast(){
   <div class="seg"><button class="on" data-act="seg" data-g="side" data-v="Sol">Sol</button><button data-act="seg" data-g="side" data-v="Sağ">Sağ</button></div>
   <button class="btn pri block" style="margin-top:14px" data-act="startTimer" data-k="breast">▶ Şimdi başlat</button>
   <div class="or">veya geçmiş kaydı elle gir</div>
-  <div class="two"><div><label>Başlangıç saati</label><input type="time" id="f-time" value="${nowHM()}"></div><div><label>Süre (dk)</label><input type="number" id="f-dur" inputmode="decimal" placeholder="15"></div></div>
+  ${dtRow()}
+  <label>Süre (dk)</label><input type="number" id="f-dur" inputmode="decimal" placeholder="15">
   <button class="btn block" style="margin-top:12px" data-act="saveBreast">Kaydet</button>`);
 }
 function openSleep(){
   openSheet(`<h3>😴 Uyku</h3>
   <button class="btn pri block" data-act="startTimer" data-k="sleep">▶ Uyudu, sayacı başlat</button>
   <div class="or">veya geçmiş kaydı elle gir</div>
-  <div class="two"><div><label>Başlangıç saati</label><input type="time" id="f-time" value="${nowHM()}"></div><div><label>Süre (dk)</label><input type="number" id="f-dur" inputmode="decimal" placeholder="45"></div></div>
+  ${dtRow()}
+  <label>Süre (dk)</label><input type="number" id="f-dur" inputmode="decimal" placeholder="45">
   <button class="btn block" style="margin-top:12px" data-act="saveSleep">Kaydet</button>`);
 }
 function openBottle(){
@@ -517,7 +532,7 @@ function openBottle(){
   <div class="seg"><button class="on" data-act="seg" data-g="bk" data-v="Anne sütü">Anne sütü</button><button data-act="seg" data-g="bk" data-v="Mama">Mama</button></div>
   <label>Miktar (ml)</label><input type="number" id="f-ml" inputmode="numeric" placeholder="90">
   <div class="chips">${[30,60,90,120,150,180].map(v=>`<button data-act="ml" data-v="${v}">${v}</button>`).join('')}</div>
-  <label>Saat</label><input type="time" id="f-time" value="${nowHM()}">
+  ${dtRow()}
   <button class="btn pri block" style="margin-top:16px" data-act="saveBottle">Kaydet</button>`);
 }
 function openDiaper(){
@@ -525,12 +540,21 @@ function openDiaper(){
   openSheet(`<h3>🧷 Bez</h3>
   <div class="seg"><button data-act="seg" data-g="dk" data-v="wet">💧 Islak</button><button data-act="seg" data-g="dk" data-v="dirty">💩 Kirli</button><button data-act="seg" data-g="dk" data-v="both">💧💩 İkisi</button></div>
   <div id="colorRow" hidden><label>Renk (isteğe bağlı)</label><div class="chips">${['Sarı','Yeşil','Kahverengi','Koyu'].map(c=>`<button data-act="col" data-v="${c}">${c}</button>`).join('')}</div></div>
-  <label>Saat</label><input type="time" id="f-time" value="${nowHM()}">
+  ${dtRow()}
   <button class="btn pri block" style="margin-top:16px" data-act="saveDiaper">Kaydet</button>`);
 }
 function openEv(id){
   const e=S.events.find(x=>x.id===id);if(!e)return;const i=evInfo(e);
-  openSheet(`<h3>${i.ic} ${esc(i.t)}</h3><div class="mute">${fmtDate(e.t)} · ${hm(e.t)}${i.s?' · '+esc(i.s):''}</div>${delBlock('delEv',id)}<button class="btn block" style="margin-top:10px" data-act="close">Kapat</button>`);
+  sel={side:e.side||'Sol',bk:e.kind||'Anne sütü',dk:e.kind,col:e.color||''};
+  const seg=(g,opts,cur)=>`<div class="seg">${opts.map(([v,l])=>`<button class="${cur===v?'on':''}" data-act="seg" data-g="${g}" data-v="${v}">${l}</button>`).join('')}</div>`;
+  let f='';
+  if(e.type==='breast')f=seg('side',[['Sol','Sol'],['Sağ','Sağ']],e.side||'Sol')+`<label>Süre (dk)</label><input type="number" id="f-dur" inputmode="decimal" value="${e.dur?Math.round(e.dur/60000):''}">`;
+  else if(e.type==='sleep')f=`<label>Süre (dk)</label><input type="number" id="f-dur" inputmode="decimal" value="${e.dur?Math.round(e.dur/60000):''}">`;
+  else if(e.type==='bottle')f=seg('bk',[['Anne sütü','Anne sütü'],['Mama','Mama']],e.kind||'Anne sütü')+`<label>Miktar (ml)</label><input type="number" id="f-ml" inputmode="numeric" value="${e.ml||''}">`;
+  else if(e.type==='diaper')f=seg('dk',[['wet','💧 Islak'],['dirty','💩 Kirli'],['both','💧💩 İkisi']],e.kind)+`<div id="colorRow" ${e.kind==='wet'?'hidden':''}><label>Renk (isteğe bağlı)</label><div class="chips">${['Sarı','Yeşil','Kahverengi','Koyu'].map(c=>`<button class="${e.color===c?'on':''}" data-act="col" data-v="${c}">${c}</button>`).join('')}</div></div>`;
+  else f=`<div class="mute">${esc(i.s||'')}</div>`;
+  openSheet(`<h3>${i.ic} ${esc(i.t)} · düzenle</h3>${dtRow(e.t)}<div style="height:12px"></div>${f}
+  <button class="btn pri block" style="margin-top:16px" data-act="saveEv" data-id="${id}">Kaydet</button>${delBlock('delEv',id)}<button class="btn block" style="margin-top:10px" data-act="close">Kapat</button>`);
 }
 function openMed(id){
   const m=S.meds.find(x=>x.id===id)||{};sel={medId:id||''};
@@ -635,11 +659,20 @@ const H={
   startTimer(el){const k=el.dataset.k;S.timers[k]={start:Date.now()};if(k==='breast')S.timers[k].side=sel.side||'Sol';save();closeSheet();render();},
   stopTimer(el){const k=el.dataset.k,t=S.timers[k];if(!t)return;const e={id:uid(),type:k,t:t.start,dur:Date.now()-t.start};if(k==='breast')e.side=t.side;S.events.push(e);delete S.timers[k];save();render();flash('Kaydedildi');},
   cancelTimer(el){delete S.timers[el.dataset.k];save();render();},
-  saveBreast(){const m=num($('#f-dur').value);if(!(m>0))return flash('Süreyi gir');S.events.push({id:uid(),type:'breast',t:tFrom('f-time'),side:sel.side||'Sol',dur:m*60000});save();closeSheet();render();flash('Kaydedildi');},
-  saveSleep(){const m=num($('#f-dur').value);if(!(m>0))return flash('Süreyi gir');S.events.push({id:uid(),type:'sleep',t:tFrom('f-time'),dur:m*60000});save();closeSheet();render();flash('Kaydedildi');},
-  saveBottle(){const ml=num($('#f-ml').value);if(!(ml>0))return flash('Miktarı gir');S.events.push({id:uid(),type:'bottle',t:tFrom('f-time'),ml:Math.round(ml),kind:sel.bk||'Anne sütü'});save();closeSheet();render();flash('Kaydedildi');},
-  saveDiaper(){if(!sel.dk)return flash('Islak mı kirli mi seç');const e={id:uid(),type:'diaper',t:tFrom('f-time'),kind:sel.dk};if(sel.col&&sel.dk!=='wet')e.color=sel.col;S.events.push(e);save();closeSheet();render();flash('Kaydedildi');},
+  saveBreast(){const m=num($('#f-dur').value);if(!(m>0))return flash('Süreyi gir');const t=tAt('f-time','f-date');if(t===null)return;S.events.push({id:uid(),type:'breast',t,side:sel.side||'Sol',dur:m*60000});save();closeSheet();render();flash('Kaydedildi');},
+  saveSleep(){const m=num($('#f-dur').value);if(!(m>0))return flash('Süreyi gir');const t=tAt('f-time','f-date');if(t===null)return;S.events.push({id:uid(),type:'sleep',t,dur:m*60000});save();closeSheet();render();flash('Kaydedildi');},
+  saveBottle(){const ml=num($('#f-ml').value);if(!(ml>0))return flash('Miktarı gir');const t=tAt('f-time','f-date');if(t===null)return;S.events.push({id:uid(),type:'bottle',t,ml:Math.round(ml),kind:sel.bk||'Anne sütü'});save();closeSheet();render();flash('Kaydedildi');},
+  saveDiaper(){if(!sel.dk)return flash('Islak mı kirli mi seç');const t=tAt('f-time','f-date');if(t===null)return;const e={id:uid(),type:'diaper',t,kind:sel.dk};if(sel.col&&sel.dk!=='wet')e.color=sel.col;S.events.push(e);save();closeSheet();render();flash('Kaydedildi');},
   openEv(el){openEv(el.dataset.id);},
+  saveEv(el){
+    const e=S.events.find(x=>x.id===el.dataset.id);if(!e)return;const t=tAt('f-time','f-date');if(t===null)return;
+    if(e.type==='breast'||e.type==='sleep'){const m=num($('#f-dur').value);if(!(m>0))return flash('Süreyi gir');e.dur=m*60000;if(e.type==='breast')e.side=sel.side||'Sol';}
+    if(e.type==='bottle'){const ml=num($('#f-ml').value);if(!(ml>0))return flash('Miktarı gir');e.ml=Math.round(ml);e.kind=sel.bk||'Anne sütü';}
+    if(e.type==='diaper'){if(!sel.dk)return flash('Islak mı kirli mi seç');e.kind=sel.dk;if(sel.col&&sel.dk!=='wet')e.color=sel.col;else delete e.color;}
+    e.t=t;save();closeSheet();render();flash('Güncellendi');
+  },
+  dayGo(el){const d=parseDate(vday());d.setDate(d.getDate()+(+el.dataset.v));const k=dayKey(d.getTime());viewDay=k>=todayStr()?'':k;render();},
+  dayPick(el){const v=el.value;viewDay=!v||v>=todayStr()?'':v;render();},
   delEv(el){S.events=S.events.filter(e=>e.id!==el.dataset.id);save();closeSheet();render();},
   medSlot(el){const {id,slot}=el.dataset,i=S.events.findIndex(e=>e.type==='med'&&e.medId===id&&e.slot===slot);
     if(i>=0)S.events.splice(i,1);else{const m=S.meds.find(x=>x.id===id);S.events.push({id:uid(),type:'med',medId:id,name:m.name,dose:m.dose,slot,t:Date.now()});}
@@ -685,6 +718,8 @@ document.addEventListener('click',e=>{
   const el=e.target.closest('[data-act]');if(!el)return;
   const f=H[el.dataset.act];if(f)f(el,e);
 });
+
+document.addEventListener('change',e=>{const el=e.target.closest&&e.target.closest('[data-chg]');if(el&&H[el.dataset.chg])H[el.dataset.chg](el);});
 
 /* ---------- başlat ---------- */
 (function boot(){
