@@ -11,7 +11,7 @@ const FB={
   messagingSenderId:"386088030461",
   appId:"1:386088030461:web:563d1e025a90fe2aab6e94"
 };
-const VERSION='1.8',BUILD='16 Kasım 2026';
+const VERSION='1.9',BUILD='16 Kasım 2026';
 const FAM_KEY='bebektakip.family';
 const COLS=['events','meds','growth','vax','timers','meta','appts','notes'];
 let S={baby:{name:'',birth:''},events:[],meds:[],vax:{},growth:[],timers:{},appts:[],notes:[]};
@@ -284,8 +284,8 @@ function avgCard(){
   const wet=di.filter(e=>e.kind!=='dirty').length,dirty=di.filter(e=>e.kind!=='wet').length;
   const cell=(t,b,sm)=>`<div class="stat"><span>${t}</span><b>${b}</b>${sm?`<span>${sm}</span>`:''}</div>`;
   h+=`<div class="stats" style="grid-template-columns:1fr 1fr">`+
-    cell('🤱 Emzirme',f1(br.length/days)+' kez',br.length?'ort. '+dur(sum(br,'dur')/br.length):'')+
     cell('🍼 Biberon',f1(bo.length/days)+' kez · '+Math.round(sum(bo,'ml')/days)+' ml',bo.length?'ort. '+Math.round(sum(bo,'ml')/bo.length)+' ml / öğün':'')+
+    cell('🥛 Tür',f1(bo.filter(e=>e.kind!=='Mama').length/days)+' anne sütü · '+f1(bo.filter(e=>e.kind==='Mama').length/days)+' mama','günde')+
     cell('🧷 Bez',f1(wet/days)+' ıslak · '+f1(dirty/days)+' kirli','günde')+
     cell('😴 Uyku',sl.length?dur(sum(sl,'dur')/days):'—',sl.length?f1(sl.length/days)+' uyku · ort. '+dur(sum(sl,'dur')/sl.length):'')+
     `</div>`;
@@ -306,8 +306,7 @@ function vToday(){
     h+=`<div class="card timer"><div><div class="tl">${lab}</div><div class="tm" data-start="${t.start}">${mmss(now-t.start)}</div></div><div class="row"><button class="btn pri" data-act="stopTimer" data-k="${k}">Bitir</button><button class="btn ghost sm" data-act="cancelTimer" data-k="${k}">İptal</button></div></div>`;
   }
   h+=`<div class="qgrid">
-    <button class="q feed" data-act="qBreast"><span>🤱</span>Emzirme</button>
-    <button class="q bottle" data-act="qBottle"><span>🍼</span>Biberon</button>
+    <button class="q bottle" data-act="qBottle" style="grid-column:span 2"><span>🍼</span>Biberon</button>
     <button class="q diaper" data-act="qDiaper"><span>🧷</span>Bez</button>
     <button class="q sleep" data-act="qSleep"><span>😴</span>Uyku</button></div>`;
   const lastFeed=all.find(e=>e.type==='breast'||e.type==='bottle');
@@ -322,7 +321,7 @@ function vToday(){
   const br=today.filter(e=>e.type==='breast'),bo=today.filter(e=>e.type==='bottle'),di=today.filter(e=>e.type==='diaper'),sl=today.filter(e=>e.type==='sleep');
   const ml=bo.reduce((s,e)=>s+(e.ml||0),0),wet=di.filter(e=>e.kind!=='dirty').length,dirty=di.filter(e=>e.kind!=='wet').length,slp=sl.reduce((s,e)=>s+(e.dur||0),0);
   h+=`<div class="card"><div class="sum">
-    <div><b>${br.length}</b><span>emzirme</span></div>
+    <div><b>${br.length+bo.length}</b><span>beslenme</span></div>
     <div><b>${ml}</b><span>ml biberon</span></div>
     <div><b>${wet}/${dirty}</b><span>ıslak/kirli</span></div>
     <div><b>${slp?dur(slp).replace(' sa','s').replace(' dk','dk'):'0'}</b><span>uyku</span></div></div></div>`;
@@ -610,16 +609,6 @@ function closeSheet(){$('#sheet').hidden=true;document.body.style.overflow='';se
 const nowHM=()=>hm(Date.now());
 const delBlock=(act,id)=>`<div style="margin-top:18px"><button class="btn block ghost bad" data-act="askDel">Sil</button><div id="delConfirm" hidden><div class="two"><button class="btn danger" data-act="${act}" data-id="${id}">Evet, sil</button><button class="btn" data-act="close">Vazgeç</button></div></div></div>`;
 
-function openBreast(){
-  sel={side:'Sol'};
-  openSheet(`<h3>🤱 Emzirme</h3>
-  <div class="seg"><button class="on" data-act="seg" data-g="side" data-v="Sol">Sol</button><button data-act="seg" data-g="side" data-v="Sağ">Sağ</button></div>
-  <button class="btn pri block" style="margin-top:14px" data-act="startTimer" data-k="breast">▶ Şimdi başlat</button>
-  <div class="or">veya geçmiş kaydı elle gir</div>
-  ${dtRow()}
-  <label>Süre (dk)</label><input type="number" id="f-dur" inputmode="decimal" placeholder="15">
-  <button class="btn block" style="margin-top:12px" data-act="saveBreast">Kaydet</button>`);
-}
 function openSleep(){
   openSheet(`<h3>😴 Uyku</h3>
   <button class="btn pri block" data-act="startTimer" data-k="sleep">▶ Uyudu, sayacı başlat</button>
@@ -759,11 +748,10 @@ const H={
   ml(el){$('#f-ml').value=el.dataset.v;},
   sleepSum(){sleepSum();},
   medName(el){$('#m-name').value=el.dataset.v;},
-  qBreast:openBreast,qBottle:openBottle,qDiaper:openDiaper,qSleep:openSleep,
+  qBottle:openBottle,qDiaper:openDiaper,qSleep:openSleep,
   startTimer(el){const k=el.dataset.k;S.timers[k]={start:Date.now()};if(k==='breast')S.timers[k].side=sel.side||'Sol';save();closeSheet();render();},
   stopTimer(el){const k=el.dataset.k,t=S.timers[k];if(!t)return;const e={id:uid(),type:k,t:t.start,dur:Date.now()-t.start};if(k==='breast')e.side=t.side;S.events.push(e);delete S.timers[k];save();render();flash('Kaydedildi');},
   cancelTimer(el){delete S.timers[el.dataset.k];save();render();},
-  saveBreast(){const m=num($('#f-dur').value);if(!(m>0))return flash('Süreyi gir');const t=tAt('f-time','f-date');if(t===null)return;S.events.push({id:uid(),type:'breast',t,side:sel.side||'Sol',dur:m*60000});save();closeSheet();render();flash('Kaydedildi');},
   saveSleep(){const r=sleepAt();if(!r)return;S.events.push({id:uid(),type:'sleep',t:r.t,dur:r.dur});save();closeSheet();render();flash('Kaydedildi');},
   saveBottle(){const ml=num($('#f-ml').value);if(!(ml>0))return flash('Miktarı gir');const t=tAt('f-time','f-date');if(t===null)return;S.events.push({id:uid(),type:'bottle',t,ml:Math.round(ml),kind:sel.bk||'Anne sütü'});save();closeSheet();render();flash('Kaydedildi');},
   saveDiaper(){if(!sel.dk)return flash('Islak mı kirli mi seç');const t=tAt('f-time','f-date');if(t===null)return;const e={id:uid(),type:'diaper',t,kind:sel.dk};if(sel.col&&sel.dk!=='wet')e.color=sel.col;S.events.push(e);save();closeSheet();render();flash('Kaydedildi');},
