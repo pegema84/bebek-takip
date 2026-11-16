@@ -1,6 +1,6 @@
 /* ---------- veri (Firebase ile ortak) ---------- */
 import {initializeApp} from 'firebase/app';
-import {initializeFirestore,getFirestore,persistentLocalCache,persistentMultipleTabManager,collection,doc,query,where,onSnapshot,writeBatch} from 'firebase/firestore';
+import {initializeFirestore,getFirestore,persistentLocalCache,persistentMultipleTabManager,collection,doc,query,where,onSnapshot,writeBatch,getDocs,getDocsFromCache} from 'firebase/firestore';
 import {getAuth,onAuthStateChanged,signInAnonymously} from 'firebase/auth';
 
 const FB={
@@ -11,12 +11,14 @@ const FB={
   messagingSenderId:"386088030461",
   appId:"1:386088030461:web:563d1e025a90fe2aab6e94"
 };
-const VERSION='1.9',BUILD='16 Kasım 2026';
+const VERSION='2.0',BUILD='16 Kasım 2026';
 const FAM_KEY='bebektakip.family';
-const COLS=['events','meds','growth','vax','timers','meta','appts','notes'];
-let S={baby:{name:'',birth:''},events:[],meds:[],vax:{},growth:[],timers:{},appts:[],notes:[]};
+const COLS=['events','meds','growth','vax','timers','meta','appts','notes','qs'];
+let S={baby:{name:'',birth:''},events:[],meds:[],vax:{},growth:[],timers:{},appts:[],notes:[],qs:[]};
 let FID='',fdb=null,fauth=null,ready=false,syncError='',authFail=false,unsubs=[],lastUid='',lastErrMsg='',reauthN=0;
 const shadow=new Map(),got=new Set(),pend={};
+/* 90 günden eski kayıtlar: canlı dinlenmez, o güne gidilince ay ay yüklenir */
+const oldEv=new Map(),oldLoaded=new Set(),oldBusy=new Set();let SINCE=0;
 let memFam='';
 function getFamily(){try{return localStorage.getItem(FAM_KEY)||memFam;}catch(e){return memFam;}}
 function setFamily(c){memFam=c;try{if(c)localStorage.setItem(FAM_KEY,c);else localStorage.removeItem(FAM_KEY);}catch(e){}}
@@ -31,6 +33,7 @@ function currentMap(){
   S.growth.forEach(e=>m.set('growth/'+e.id,e));
   S.appts.forEach(e=>m.set('appts/'+e.id,e));
   S.notes.forEach(e=>m.set('notes/'+e.id,e));
+  S.qs.forEach(e=>m.set('qs/'+e.id,e));
   Object.entries(S.vax).forEach(([k,v])=>m.set('vax/'+k,{d:v}));
   Object.entries(S.timers).forEach(([k,v])=>m.set('timers/'+k,v));
   if(S.baby.name||S.baby.birth)m.set('meta/baby',S.baby);
@@ -51,11 +54,16 @@ function applySnap(c,snap){
   [...shadow.keys()].forEach(k=>{if(k.startsWith(c+'/'))shadow.delete(k);});
   const docs=snap.docs.map(d=>({id:d.id,data:d.data()}));
   docs.forEach(x=>shadow.set(c+'/'+x.id,stable(x.data)));
-  if(c==='events')S.events=docs.map(x=>Object.assign({},x.data,{id:x.id}));
+  if(c==='events'){
+    S.events=docs.map(x=>Object.assign({},x.data,{id:x.id}));
+    const ids=new Set(docs.map(x=>x.id));
+    oldEv.forEach((e,id)=>{if(ids.has(id)||e.t>=SINCE)oldEv.delete(id);else{S.events.push(e);shadow.set('events/'+id,stable(e));}});
+  }
   else if(c==='meds')S.meds=docs.map(x=>Object.assign({},x.data,{id:x.id}));
   else if(c==='growth')S.growth=docs.map(x=>Object.assign({},x.data,{id:x.id}));
   else if(c==='appts')S.appts=docs.map(x=>Object.assign({},x.data,{id:x.id}));
   else if(c==='notes')S.notes=docs.map(x=>Object.assign({},x.data,{id:x.id}));
+  else if(c==='qs')S.qs=docs.map(x=>Object.assign({},x.data,{id:x.id}));
   else if(c==='vax'){S.vax={};docs.forEach(x=>{S.vax[x.id]=x.data.d;});}
   else if(c==='timers'){S.timers={};docs.forEach(x=>{S.timers[x.id]=x.data;});}
   else if(c==='meta'){const b=docs.find(x=>x.id==='baby');S.baby=Object.assign({name:'',birth:''},b?b.data:{});}
@@ -65,13 +73,41 @@ function applySnap(c,snap){
 }
 function relisten(){
   unsubs.forEach(f=>{try{f();}catch(e){}});unsubs=[];
-  const d=new Date();d.setHours(0,0,0,0);const since=+d-90*864e5;
+  const d=new Date();d.setHours(0,0,0,0);const since=+d-90*864e5;SINCE=since;
   COLS.forEach(c=>{
     const base=collection(fdb,'families',FID,c);
     const q=c==='events'?query(base,where('t','>=',since)):base;
     unsubs.push(onSnapshot(q,{includeMetadataChanges:true},snap=>applySnap(c,snap),err=>{syncError=err&&err.code||'hata';lastErrMsg=err&&err.message||'';if(syncError==='permission-denied')onDenied();render();}));
   });
 }
+function fetchQ(q){
+  let done=false;
+  return Promise.race([getDocs(q).then(r=>{done=true;return r;}),new Promise(r=>setTimeout(r,6000)).then(()=>done?new Promise(()=>{}):getDocsFromCache(q))]).catch(()=>getDocsFromCache(q));
+}
+function needOld(day){
+  if(!SINCE||!fdb||+parseDate(day)>=SINCE)return false;
+  const mk=day.slice(0,7);if(oldLoaded.has(mk))return false;
+  if(!oldBusy.has(mk)){oldBusy.add(mk);loadOld(mk);}
+  return true;
+}
+function loadOld(mk){
+  const [y,m]=mk.split('-').map(Number),a=+new Date(y,m-1,1),b=Math.min(+new Date(y,m,1),SINCE);
+  fetchQ(query(collection(fdb,'families',FID,'events'),where('t','>=',a),where('t','<',b))).then(snap=>{
+    const have=new Set(S.events.map(e=>e.id));
+    snap.docs.forEach(d=>{if(have.has(d.id))return;const e=Object.assign({},d.data(),{id:d.id});oldEv.set(e.id,e);S.events.push(e);shadow.set('events/'+e.id,stable(e));});
+    oldLoaded.add(mk);
+  }).catch(()=>{setTimeout(()=>oldBusy.delete(mk),4000);}).then(()=>{oldBusy.delete(mk);render();});
+}
+function keepOld(e){if(SINCE&&e.t<SINCE)oldEv.set(e.id,e);else oldEv.delete(e.id);}
+function addEv(e){const w=who();if(w)e.by=w;S.events.push(e);if(SINCE&&e.t<SINCE)oldEv.set(e.id,e);return e;}
+function allEvents(){
+  if(!fdb)return Promise.resolve(S.events.slice());
+  return fetchQ(collection(fdb,'families',FID,'events')).then(snap=>{
+    const m=new Map();snap.docs.forEach(d=>m.set(d.id,Object.assign({},d.data(),{id:d.id})));
+    S.events.forEach(e=>m.set(e.id,e));return [...m.values()];
+  }).catch(()=>S.events.slice());
+}
+function who(){try{return localStorage.getItem('bt_who')||'';}catch(e){return '';}}
 function reauth(){
   if(!fauth)return;
   fauth.signOut().then(()=>signInAnonymously(fauth)).catch(()=>{authFail=true;render();});
@@ -163,6 +199,7 @@ function ageText(){
   if(m<0)return 'Henüz doğmadı';
   return (m?m+' ay ':'')+d+' gün';
 }
+const f1=x=>(Math.round(x*10)/10).toString().replace('.',',');
 let toastT;
 function flash(msg){const t=$('#toast');t.textContent=msg;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,2200);}
 
@@ -202,6 +239,8 @@ function evInfo(e){
     case 'diaper':return {ic:e.kind==='wet'?'💧':e.kind==='dirty'?'💩':'💧',t:{wet:'Islak bez',dirty:'Kirli bez',both:'Islak + kirli bez'}[e.kind]||'Bez',s:e.color||''};
     case 'sleep':return {ic:'😴',t:'Uyku',s:e.dur?dur(e.dur):''};
     case 'med':return {ic:'💊',t:e.name||'İlaç',s:e.dose||''};
+    case 'pump':return {ic:'🥛',t:'Sağım · '+e.ml+' ml',s:''};
+    case 'temp':return {ic:'🌡️',t:'Ateş · '+f1(e.c)+' °C',s:e.note||''};
   }
   return {ic:'•',t:e.type,s:''};
 }
@@ -224,6 +263,11 @@ function alertList(){
   });
   const late=medSlots().filter(s=>!s.ev&&s.due<now);
   if(late.length)out.push({tab:'med',ic:'💊',t:late.length+' ilaç dozu gecikti',tag:late[0].m.name+(late.length>1?' +'+(late.length-1):''),cls:'warn',d:-0.5});
+  try{
+    let f=+localStorage.getItem('bt_first');if(!f){f=now;localStorage.setItem('bt_first',String(now));}
+    const lb=+localStorage.getItem('bt_backup')||f,dd=Math.floor((now-lb)/864e5);
+    if(dd>=30&&S.events.length)out.push({act:'gear',tab:'',ic:'💾',t:'Yedek alma zamanı (Ayarlar > Yedek)',tag:dd+' gündür yok',cls:'warn',d:20});
+  }catch(e){}
   return out.sort((a,b)=>a.d-b.d).slice(0,4);
 }
 
@@ -270,27 +314,35 @@ function saveICS(name,evs){
 }
 
 let avgN=7;
-const f1=x=>(Math.round(x*10)/10).toString().replace('.',',');
-function avgCard(){
-  const tk=todayStr(),t0=parseDate(tk),start=new Date(t0.getFullYear(),t0.getMonth(),t0.getDate()-avgN);
+function avgStats(n){
+  const tk=todayStr(),t0=parseDate(tk),start=new Date(t0.getFullYear(),t0.getMonth(),t0.getDate()-n);
   const evs=S.events.filter(e=>e.type!=='med'&&e.t>=start&&e.t<t0);
-  const days=new Set(evs.map(e=>dayKey(e.t))).size;
-  let h=`<h2>Günlük ortalama · son ${avgN} gün</h2><div class="card"><div class="row" style="margin-bottom:10px">${[1,3,7,14].map(n=>`<button class="btn sm${avgN===n?' pri':''}" style="flex:1;padding:0 4px" data-act="avgN" data-v="${n}">${n} gün</button>`).join('')}</div>`;
-  if(!days)return h+`<div class="mute" style="font-size:14px">Tamamlanmış gün kaydı olunca ortalama burada görünür (bugün hariç).</div></div>`;
-  const br=evs.filter(e=>e.type==='breast'),bo=evs.filter(e=>e.type==='bottle'),di=evs.filter(e=>e.type==='diaper'),sl=evs.filter(e=>e.type==='sleep');
+  const days=new Set(evs.filter(e=>e.type!=='temp').map(e=>dayKey(e.t))).size;
+  const bo=evs.filter(e=>e.type==='bottle'||e.type==='breast'),di=evs.filter(e=>e.type==='diaper'),sl=evs.filter(e=>e.type==='sleep'),pu=evs.filter(e=>e.type==='pump'),te=evs.filter(e=>e.type==='temp');
   const sum=(a,k)=>a.reduce((x,e)=>x+(e[k]||0),0);
-  const fe=evs.filter(e=>e.type==='breast'||e.type==='bottle').map(e=>e.t).sort((a,b)=>a-b);
-  let gaps=[];for(let i=1;i<fe.length;i++){const g=fe[i]-fe[i-1];if(g<=12*36e5)gaps.push(g);}
-  const wet=di.filter(e=>e.kind!=='dirty').length,dirty=di.filter(e=>e.kind!=='wet').length;
+  const fe=bo.map(e=>e.t).sort((a,b)=>a-b);
+  const gaps=[];for(let i=1;i<fe.length;i++){const g=fe[i]-fe[i-1];if(g<=12*36e5)gaps.push(g);}
+  const d=days||1,bt=bo.filter(e=>e.type==='bottle');
+  return {days,feedN:bo.length/d,ml:sum(bt,'ml')/d,mlPer:bt.length?sum(bt,'ml')/bt.length:0,bm:bt.filter(e=>e.kind!=='Mama').length/d,fm:bt.filter(e=>e.kind==='Mama').length/d,
+    wet:di.filter(e=>e.kind!=='dirty').length/d,dirty:di.filter(e=>e.kind!=='wet').length/d,
+    slN:sl.length/d,slDay:sum(sl,'dur')/d,slPer:sl.length?sum(sl,'dur')/sl.length:0,
+    gap:gaps.length?gaps.reduce((a,b)=>a+b,0)/gaps.length:0,puN:pu.length/d,puMl:sum(pu,'ml')/d,
+    tMax:te.length?te.reduce((a,b)=>b.c>a.c?b:a):null};
+}
+function avgCard(){
+  const a=avgStats(avgN);
+  let h=`<h2>Günlük ortalama · son ${avgN} gün</h2><div class="card"><div class="row" style="margin-bottom:10px">${[1,3,7,14].map(n=>`<button class="btn sm${avgN===n?' pri':''}" style="flex:1;padding:0 4px" data-act="avgN" data-v="${n}">${n} gün</button>`).join('')}</div>`;
+  if(!a.days)return h+`<div class="mute" style="font-size:14px">Tamamlanmış gün kaydı olunca ortalama burada görünür (bugün hariç).</div></div>`;
   const cell=(t,b,sm)=>`<div class="stat"><span>${t}</span><b>${b}</b>${sm?`<span>${sm}</span>`:''}</div>`;
   h+=`<div class="stats" style="grid-template-columns:1fr 1fr">`+
-    cell('🍼 Biberon',f1(bo.length/days)+' kez · '+Math.round(sum(bo,'ml')/days)+' ml',bo.length?'ort. '+Math.round(sum(bo,'ml')/bo.length)+' ml / öğün':'')+
-    cell('🥛 Tür',f1(bo.filter(e=>e.kind!=='Mama').length/days)+' anne sütü · '+f1(bo.filter(e=>e.kind==='Mama').length/days)+' mama','günde')+
-    cell('🧷 Bez',f1(wet/days)+' ıslak · '+f1(dirty/days)+' kirli','günde')+
-    cell('😴 Uyku',sl.length?dur(sum(sl,'dur')/days):'—',sl.length?f1(sl.length/days)+' uyku · ort. '+dur(sum(sl,'dur')/sl.length):'')+
+    cell('🍼 Biberon',f1(a.feedN)+' kez · '+Math.round(a.ml)+' ml',a.mlPer?'ort. '+Math.round(a.mlPer)+' ml / öğün':'')+
+    cell('🥛 Tür',f1(a.bm)+' anne sütü · '+f1(a.fm)+' mama','günde')+
+    cell('🧷 Bez',f1(a.wet)+' ıslak · '+f1(a.dirty)+' kirli','günde')+
+    cell('😴 Uyku',a.slN?dur(a.slDay):'—',a.slN?f1(a.slN)+' uyku · ort. '+dur(a.slPer):'')+
+    (a.puN?cell('🥛 Sağım',Math.round(a.puMl)+' ml',f1(a.puN)+' kez · günde'):'')+
+    (a.gap?cell('⏱ Beslenme aralığı',dur(a.gap),'ortalama'):'')+
     `</div>`;
-  if(gaps.length)h+=`<div class="stat" style="margin-top:8px"><span>Ortalama beslenme aralığı</span><b>${dur(gaps.reduce((a,b)=>a+b,0)/gaps.length)}</b></div>`;
-  h+=`<div class="foot" style="margin-top:8px">Kayıt girilen ${days} gün üzerinden, bugün hariç. Kayıt girmediğin günler hesaba katılmaz.</div></div>`;
+  h+=`<div class="foot" style="margin-top:8px">Kayıt girilen ${a.days} gün üzerinden, bugün hariç. Kayıt girmediğin günler hesaba katılmaz.</div></div>`;
   return h;
 }
 function vToday(){
@@ -299,7 +351,7 @@ function vToday(){
   const vd=vday(),isT=vd===tk,today=all.filter(e=>dayKey(e.t)===vd);
   let h='';
   if(!S.baby.birth)h+=`<div class="card hint"><b>Başlayalım</b><p>Bebeğin adını ve doğum tarihini gir. Aşı takvimi buna göre hesaplanır.</p><button class="btn pri" data-act="gear">Bilgileri gir</button></div>`;
-  for(const a of alertList())h+=`<button class="item" data-act="tab" data-v="${a.tab}"${a.topic?` data-topic="${a.topic}"`:''} style="border-color:var(--${a.cls==='bad'?'bad':'warn'})"><span class="ic">${a.ic}</span><span class="tx">${esc(a.t)}</span><span class="tag ${a.cls}">${esc(a.tag)}</span></button>`;
+  for(const a of alertList())h+=`<button class="item" data-act="${a.act||'tab'}" data-v="${a.tab}"${a.topic?` data-topic="${a.topic}"`:''} style="border-color:var(--${a.cls==='bad'?'bad':'warn'})"><span class="ic">${a.ic}</span><span class="tx">${esc(a.t)}</span><span class="tag ${a.cls}">${esc(a.tag)}</span></button>`;
   for(const k of Object.keys(S.timers)){
     const t=S.timers[k];
     const lab=k==='breast'?'🤱 Emzirme'+(t.side?' · '+esc(t.side):''):'😴 Uyku';
@@ -308,7 +360,13 @@ function vToday(){
   h+=`<div class="qgrid">
     <button class="q bottle" data-act="qBottle" style="grid-column:span 2"><span>🍼</span>Biberon</button>
     <button class="q diaper" data-act="qDiaper"><span>🧷</span>Bez</button>
-    <button class="q sleep" data-act="qSleep"><span>😴</span>Uyku</button></div>`;
+    <button class="q sleep" data-act="qSleep"><span>😴</span>Uyku</button>
+    <button class="q pump" data-act="qPump"><span>🥛</span>Sağım</button>
+    <button class="q temp" data-act="qTemp"><span>🌡️</span>Ateş</button></div>`;
+  const lastB=all.find(e=>e.type==='bottle');
+  if(isT&&lastB)h+=`<button class="btn block" style="margin:-2px 0 12px" data-act="repeatBottle">🔁 Aynısını şimdi kaydet: ${lastB.ml} ml ${esc(lastB.kind||'')}</button>`;
+  const lastT=all.find(e=>e.type==='temp');
+  if(lastT&&now-lastT.t<24*36e5)h+=`<button class="item" data-act="openEv" data-id="${lastT.id}" style="${lastT.c>=38?'border-color:var(--bad)':''}"><span class="ic">🌡️</span><span class="tx">Son ateş: ${f1(lastT.c)} °C<small>${ago(now-lastT.t)}${feverMedText(now)}</small></span></button>`;
   const lastFeed=all.find(e=>e.type==='breast'||e.type==='bottle');
   const lastD=all.find(e=>e.type==='diaper');
   const lastDirty=all.find(e=>e.type==='diaper'&&e.kind!=='wet');
@@ -326,12 +384,18 @@ function vToday(){
     <div><b>${wet}/${dirty}</b><span>ıslak/kirli</span></div>
     <div><b>${slp?dur(slp).replace(' sa','s').replace(' dk','dk'):'0'}</b><span>uyku</span></div></div></div>`;
   h+=`<h2>${isT?'Bugünün':'Günün'} akışı</h2>`;
-  if(!today.length)h+=`<div class="card mute">${isT?'Bugün henüz kayıt yok. Yukarıdaki düğmelerle başla.':'Bu günde kayıt yok.'}</div>`;
-  for(const e of today){const i=evInfo(e);h+=`<button class="item" data-act="openEv" data-id="${e.id}"><span class="ic">${i.ic}</span><span class="tx">${esc(i.t)}${i.s?`<small>${esc(i.s)}</small>`:''}</span><span class="tm2">${hm(e.t)}</span></button>`;}
+  const oldWait=needOld(vd);
+  if(oldWait)h+=`<div class="card mute">Eski kayıtlar yükleniyor…</div>`;
+  else if(!today.length)h+=`<div class="card mute">${isT?'Bugün henüz kayıt yok. Yukarıdaki düğmelerle başla.':'Bu günde kayıt yok.'}</div>`;
+  for(const e of today){const i=evInfo(e);h+=`<button class="item" data-act="openEv" data-id="${e.id}"><span class="ic">${i.ic}</span><span class="tx">${esc(i.t)}${(i.s||e.by)?`<small>${esc([i.s,e.by].filter(Boolean).join(' · '))}</small>`:''}</span><span class="tm2">${hm(e.t)}</span></button>`;}
   h+=avgCard();
   return h;
 }
 
+const FEVER_RE=/ateş|parol|calpol|parasetamol|paracetamol|ibufen|ibuprofen|dolven|pedifen|tylol|a-ferin/i;
+function lastFeverMed(){return [...S.events].filter(e=>e.type==='med'&&FEVER_RE.test(e.name||'')).sort((a,b)=>b.t-a.t)[0];}
+function feverMedText(now){const m=lastFeverMed();return m&&now-m.t<48*36e5?' · son ateş düşürücü ('+m.name+'): '+ago(now-m.t):'';}
+function ageMonthsAt(t){return S.baby.birth?(t-parseDate(S.baby.birth))/864e5/30.4375:null;}
 function medSlots(){
   const tk=todayStr(),out=[];
   S.meds.filter(m=>!m.off).forEach(m=>(m.times||[]).forEach(t=>{
@@ -556,6 +620,7 @@ function openNote(id){
   ${id?delBlock('delNote',id):''}`);
 }
 const INFO=[
+ {id:'doc',ic:'📋',t:'Doktor için özet',sub:()=>{const n=S.qs.filter(q=>!q.done).length;return 'Ortalamalar, ölçümler'+(n?' · '+n+' soru':', sorulacaklar');},body:()=>vDoc()},
  {id:'appt',ic:'🩺',t:'Muayene randevuları',sub:()=>{const n=S.appts.filter(a=>a.t>=Date.now()-36e5).sort((a,b)=>a.t-b.t)[0];return n?'Sıradaki: '+fmtShort(n.t)+' '+hm(n.t):'Randevu ekle, takvime aktar';},body:vAppt},
  {id:'notes',ic:'📝',t:'Doktor notları',sub:()=>S.notes.length?S.notes.length+' not':'Doktorun tavsiyeleri',body:vNotes},
  {id:'miles',ic:'🧸',t:'Bebekler bunları ne zaman yapar?',sub:'Gelişim basamakları, ay ay',body:bodyMiles}
@@ -567,20 +632,114 @@ function vInfo(){
   for(const x of INFO)h+=`<button class="item" data-act="infoOpen" data-id="${x.id}"><span class="ic">${x.ic}</span><span class="tx">${esc(x.t)}<small>${esc(typeof x.sub==='function'?x.sub():x.sub)}</small></span><span class="tag mute">›</span></button>`;
   return h;
 }
+/* DSÖ (WHO) büyüme standartları, 0-36 ay, LMS değerleri [L,M,S] */
+const WHO={"wm":[[0.3487,3.3464,0.14602],[0.2297,4.4709,0.13395],[0.197,5.5675,0.12385],[0.1738,6.3762,0.11727],[0.1553,7.0023,0.11316],[0.1395,7.5105,0.1108],[0.1257,7.934,0.10958],[0.1134,8.297,0.10902],[0.1021,8.6151,0.10882],[0.0917,8.9014,0.10881],[0.082,9.1649,0.10891],[0.073,9.4122,0.10906],[0.0644,9.6479,0.10925],[0.0563,9.8749,0.10949],[0.0487,10.0953,0.10976],[0.0413,10.3108,0.11007],[0.0343,10.5228,0.11041],[0.0275,10.7319,0.11079],[0.0211,10.9385,0.11119],[0.0148,11.143,0.11164],[0.0087,11.3462,0.11211],[0.0029,11.5486,0.11261],[-0.0028,11.7504,0.11314],[-0.0083,11.9514,0.11369],[-0.0137,12.1515,0.11426],[-0.0189,12.3502,0.11485],[-0.024,12.5466,0.11544],[-0.0289,12.7401,0.11604],[-0.0337,12.9303,0.11664],[-0.0385,13.1169,0.11723],[-0.0431,13.3,0.11781],[-0.0476,13.4798,0.11839],[-0.052,13.6567,0.11896],[-0.0564,13.8309,0.11953],[-0.0606,14.0031,0.12008],[-0.0648,14.1736,0.12062],[-0.0689,14.3429,0.12116]],"wf":[[0.3809,3.2322,0.14171],[0.1714,4.1873,0.13724],[0.0962,5.1282,0.13],[0.0402,5.8458,0.12619],[-0.005,6.4237,0.12402],[-0.043,6.8985,0.12274],[-0.0756,7.297,0.12204],[-0.1039,7.6422,0.12178],[-0.1288,7.9487,0.12181],[-0.1507,8.2254,0.12199],[-0.17,8.48,0.12223],[-0.1872,8.7192,0.12247],[-0.2024,8.9481,0.12268],[-0.2158,9.1699,0.12283],[-0.2278,9.387,0.12294],[-0.2384,9.6008,0.12299],[-0.2478,9.8124,0.12303],[-0.2562,10.0226,0.12306],[-0.2637,10.2315,0.12309],[-0.2703,10.4393,0.12315],[-0.2762,10.6464,0.12323],[-0.2815,10.8534,0.12335],[-0.2862,11.0608,0.1235],[-0.2903,11.2688,0.12369],[-0.2941,11.4775,0.1239],[-0.2975,11.6864,0.12414],[-0.3005,11.8947,0.12441],[-0.3032,12.1015,0.12472],[-0.3057,12.3059,0.12506],[-0.308,12.5073,0.12545],[-0.3101,12.7055,0.12587],[-0.312,12.9006,0.12633],[-0.3138,13.093,0.12683],[-0.3155,13.2837,0.12737],[-0.3171,13.4731,0.12794],[-0.3186,13.6618,0.12855],[-0.3201,13.8503,0.12919]],"lm":[[1.0,49.8842,0.03795],[1.0,54.7244,0.03557],[1.0,58.4249,0.03424],[1.0,61.4292,0.03328],[1.0,63.886,0.03257],[1.0,65.9026,0.03204],[1.0,67.6236,0.03165],[1.0,69.1645,0.03139],[1.0,70.5994,0.03124],[1.0,71.9687,0.03117],[1.0,73.2812,0.03118],[1.0,74.5388,0.03125],[1.0,75.7488,0.03137],[1.0,76.9186,0.03154],[1.0,78.0497,0.03174],[1.0,79.1458,0.03197],[1.0,80.2113,0.03222],[1.0,81.2487,0.0325],[1.0,82.2587,0.03279],[1.0,83.2418,0.0331],[1.0,84.1996,0.03342],[1.0,85.1348,0.03376],[1.0,86.0477,0.0341],[1.0,86.941,0.03445],[1.0,87.8161,0.03479],[1.0,87.972,0.03542],[1.0,88.8065,0.03576],[1.0,89.6197,0.0361],[1.0,90.412,0.03642],[1.0,91.1828,0.03674],[1.0,91.9327,0.03704],[1.0,92.6631,0.03733],[1.0,93.3753,0.03761],[1.0,94.0711,0.03787],[1.0,94.7532,0.03812],[1.0,95.4236,0.03836],[1.0,96.0835,0.03858]],"lf":[[1.0,49.1477,0.0379],[1.0,53.6872,0.0364],[1.0,57.0673,0.03568],[1.0,59.8029,0.0352],[1.0,62.0899,0.03486],[1.0,64.0301,0.03463],[1.0,65.7311,0.03448],[1.0,67.2873,0.03441],[1.0,68.7498,0.0344],[1.0,70.1435,0.03444],[1.0,71.4818,0.03452],[1.0,72.771,0.03464],[1.0,74.015,0.03479],[1.0,75.2176,0.03496],[1.0,76.3817,0.03514],[1.0,77.5099,0.03534],[1.0,78.6055,0.03555],[1.0,79.671,0.03576],[1.0,80.7079,0.03598],[1.0,81.7182,0.0362],[1.0,82.7036,0.03643],[1.0,83.6654,0.03666],[1.0,84.604,0.03688],[1.0,85.5202,0.03711],[1.0,86.4153,0.03734],[1.0,86.5904,0.03786],[1.0,87.4462,0.03808],[1.0,88.283,0.0383],[1.0,89.1004,0.03851],[1.0,89.8991,0.03872],[1.0,90.6797,0.03893],[1.0,91.443,0.03913],[1.0,92.1906,0.03933],[1.0,92.9239,0.03952],[1.0,93.6444,0.03971],[1.0,94.3533,0.03989],[1.0,95.0515,0.04006]],"hm":[[1.0,34.4618,0.03686],[1.0,37.2759,0.03133],[1.0,39.1285,0.02997],[1.0,40.5135,0.02918],[1.0,41.6317,0.02868],[1.0,42.5576,0.02837],[1.0,43.3306,0.02817],[1.0,43.9803,0.02804],[1.0,44.53,0.02796],[1.0,44.9998,0.02792],[1.0,45.4051,0.0279],[1.0,45.7573,0.02789],[1.0,46.0661,0.02789],[1.0,46.3395,0.02789],[1.0,46.5844,0.02791],[1.0,46.806,0.02792],[1.0,47.0088,0.02795],[1.0,47.1962,0.02797],[1.0,47.3711,0.028],[1.0,47.5357,0.02803],[1.0,47.6919,0.02806],[1.0,47.8408,0.0281],[1.0,47.9833,0.02813],[1.0,48.1201,0.02817],[1.0,48.2515,0.02821],[1.0,48.3777,0.02825],[1.0,48.4989,0.0283],[1.0,48.6151,0.02834],[1.0,48.7264,0.02838],[1.0,48.8331,0.02842],[1.0,48.9351,0.02847],[1.0,49.0327,0.02851],[1.0,49.126,0.02855],[1.0,49.2153,0.02859],[1.0,49.3007,0.02863],[1.0,49.3826,0.02867],[1.0,49.4612,0.02871]],"hf":[[1.0,33.8787,0.03496],[1.0,36.5463,0.0321],[1.0,38.2521,0.03168],[1.0,39.5328,0.0314],[1.0,40.5817,0.03119],[1.0,41.459,0.03102],[1.0,42.1995,0.03087],[1.0,42.829,0.03075],[1.0,43.3671,0.03063],[1.0,43.83,0.03053],[1.0,44.2319,0.03044],[1.0,44.5844,0.03035],[1.0,44.8965,0.03027],[1.0,45.1752,0.03019],[1.0,45.4265,0.03012],[1.0,45.6551,0.03006],[1.0,45.865,0.02999],[1.0,46.0598,0.02993],[1.0,46.2424,0.02987],[1.0,46.4152,0.02982],[1.0,46.5801,0.02977],[1.0,46.7384,0.02972],[1.0,46.8913,0.02967],[1.0,47.0391,0.02962],[1.0,47.1822,0.02957],[1.0,47.3204,0.02953],[1.0,47.4536,0.02949],[1.0,47.5817,0.02945],[1.0,47.7045,0.02941],[1.0,47.8219,0.02937],[1.0,47.934,0.02933],[1.0,48.041,0.02929],[1.0,48.1432,0.02926],[1.0,48.2408,0.02922],[1.0,48.3343,0.02919],[1.0,48.4239,0.02915],[1.0,48.5099,0.02912]]};
+let growthTab='w';
+const GK={w:{k:'kg',t:'Kilo',u:'kg',dec:1,lo:'hafif',hi:'ağır'},l:{k:'cm',t:'Boy',u:'cm',dec:1,lo:'kısa',hi:'uzun'},h:{k:'head',t:'Baş çevresi',u:'cm',dec:1,lo:'küçük',hi:'büyük'}};
+const PZ=[[-1.881,'3'],[-1.036,'15'],[0,'50'],[1.036,'85'],[1.881,'97']];
+function lmsAt(key,m){const a=WHO[key+(S.baby.sex==='f'?'f':'m')];m=Math.max(0,Math.min(36,m));const i=Math.min(35,Math.floor(m)),f=m-i,p=a[i],q=a[i+1];return [p[0]+(q[0]-p[0])*f,p[1]+(q[1]-p[1])*f,p[2]+(q[2]-p[2])*f];}
+const lmsVal=([L,M,S_],z)=>Math.abs(L)<1e-6?M*Math.exp(S_*z):M*Math.pow(1+L*S_*z,1/L);
+const lmsZ=([L,M,S_],x)=>Math.abs(L)<1e-6?Math.log(x/M)/S_:(Math.pow(x/M,L)-1)/(L*S_);
+function normCdf(z){const t=1/(1+0.2316419*Math.abs(z)),d=0.3989423*Math.exp(-z*z/2);const p=d*t*(0.3193815+t*(-0.3565638+t*(1.781478+t*(-1.821256+t*1.330274))));return z>0?1-p:p;}
+function pctOf(key,ageM,x){return normCdf(lmsZ(lmsAt(key,ageM),x))*100;}
+function pctText(p){return p<1?'1. persentilin altında':p>99?'99. persentilin üstünde':'yaklaşık '+Math.round(p)+'. persentil';}
+function growthPts(key){
+  const k=GK[key].k,b=S.baby.birth?+parseDate(S.baby.birth):null;
+  return S.growth.filter(x=>x[k]&&x.d).map(x=>({d:x.d,v:+x[k],m:b===null?null:(+parseDate(x.d)-b)/864e5/30.4375})).filter(x=>x.m===null||(x.m>=-0.1&&x.m<=36)).sort((a,b2)=>a.d.localeCompare(b2.d));
+}
+function growthChart(key){
+  const g=GK[key],pts=growthPts(key),nowM=Math.max(0,ageMonthsAt(Date.now()));
+  const xmax=Math.min(36,Math.max(6,Math.ceil(Math.max(nowM,...pts.map(p=>p.m))+2)));
+  const W=340,H=240,pl=30,pr=26,pt=10,pb=36;
+  let y0=lmsVal(lmsAt(key,0),-1.881),y1=lmsVal(lmsAt(key,xmax),1.881);
+  pts.forEach(p=>{y0=Math.min(y0,p.v);y1=Math.max(y1,p.v);});
+  const padY=(y1-y0)*0.06;y0-=padY;y1+=padY;
+  const X=m=>pl+m/xmax*(W-pl-pr),Y=v=>H-pb-(v-y0)/(y1-y0)*(H-pt-pb);
+  const curve=z=>{let d='';for(let m=0;m<=xmax+1e-9;m+=0.5)d+=(d?'L':'M')+X(m).toFixed(1)+' '+Y(lmsVal(lmsAt(key,m),z)).toFixed(1);return d;};
+  let band='';for(let m=0;m<=xmax+1e-9;m+=0.5)band+=(band?'L':'M')+X(m).toFixed(1)+' '+Y(lmsVal(lmsAt(key,m),1.881)).toFixed(1);
+  for(let m=xmax;m>=-1e-9;m-=0.5)band+='L'+X(m).toFixed(1)+' '+Y(lmsVal(lmsAt(key,m),-1.881)).toFixed(1);
+  const xs=xmax<=12?1:xmax<=24?2:6,span=y1-y0,ys=[0.5,1,2,5,10].find(st=>span/st<=6)||10;
+  let grid='';
+  for(let m=0;m<=xmax;m+=xs)grid+=`<line x1="${X(m)}" y1="${pt}" x2="${X(m)}" y2="${H-pb}" stroke="var(--line)" stroke-width="1"/><text x="${X(m)}" y="${H-pb+13}" text-anchor="middle">${m}</text>`;
+  for(let v=Math.ceil(y0/ys)*ys;v<=y1;v+=ys)grid+=`<line x1="${pl}" y1="${Y(v)}" x2="${W-pr}" y2="${Y(v)}" stroke="var(--line)" stroke-width="1"/><text x="${pl-4}" y="${Y(v)+3}" text-anchor="end">${String(Math.round(v*10)/10).replace('.',',')}</text>`;
+  const lines=PZ.map(([z,l])=>`<path d="${curve(z)}" fill="none" stroke="var(--pri)" stroke-width="${z===0?2:1}" ${z===0?'':'stroke-dasharray="4 3" opacity=".75"'}/><text x="${W-pr+3}" y="${Y(lmsVal(lmsAt(key,xmax),z))+3}">${l}</text>`).join('');
+  const baby=(pts.length>1?`<polyline points="${pts.map(p=>X(p.m).toFixed(1)+','+Y(p.v).toFixed(1)).join(' ')}" fill="none" stroke="var(--med)" stroke-width="2.5" stroke-linejoin="round"/>`:'')+pts.map(p=>`<circle cx="${X(p.m).toFixed(1)}" cy="${Y(p.v).toFixed(1)}" r="4.5" fill="var(--med)" stroke="var(--card)" stroke-width="1.5"/>`).join('');
+  return `<div class="card"><svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${g.t} büyüme eğrisi"><path d="${band}Z" fill="var(--pri)" opacity=".08"/>${grid}${lines}${baby}<text x="${(pl+W-pr)/2}" y="${H-5}" text-anchor="middle">yaş (ay)</text></svg>
+  <div class="mute" style="font-size:12px;margin-top:4px"><span style="color:var(--med);font-weight:700">●</span> ${esc(S.baby.name||'Bebek')} &nbsp; <span style="color:var(--pri);font-weight:700">—</span> yaşıtların ortası (50) &nbsp; <span style="color:var(--pri)">- -</span> 3, 15, 85, 97. persentil</div></div>`;
+}
+function lastPct(key){
+  const pts=growthPts(key),l=pts[pts.length-1];if(!l||l.m===null)return null;
+  return {d:l.d,v:l.v,p:pctOf(key,l.m,l.v)};
+}
 function vGrowth(){
-  const g=[...S.growth].sort((a,b)=>a.d.localeCompare(b.d));
-  let h=`<button class="btn block pri" data-act="openGrowth" data-id="">+ Ölçüm ekle</button><h2>Kilo (kg)</h2>`;
-  const w=g.filter(x=>x.kg);
-  if(w.length<2)h+=`<div class="card mute">Grafik için en az iki kilo ölçümü gerekli.</div>`;
+  const g=[...S.growth].sort((a,b)=>a.d.localeCompare(b.d)),gk=GK[growthTab];
+  let h=`<button class="btn block pri" data-act="openGrowth" data-id="">+ Ölçüm ekle</button>
+  <div class="seg" style="margin-top:14px">${Object.keys(GK).map(k=>`<button class="${growthTab===k?'on':''}" data-act="growthTab" data-v="${k}">${GK[k].t}</button>`).join('')}</div>
+  <h2>${gk.t} (${gk.u}) · ${S.baby.sex==='f'?'kız':'erkek'} bebek eğrisi</h2>`;
+  if(!S.baby.birth)h+=`<div class="card mute">Büyüme eğrisi için Ayarlar'dan doğum tarihini gir.</div>`;
   else{
-    const W=320,H=140,p=26,xs=w.map(x=>+parseDate(x.d)),x0=Math.min(...xs),x1=Math.max(...xs)||1,ys=w.map(x=>x.kg),y0=Math.min(...ys)-.2,y1=Math.max(...ys)+.2;
-    const X=v=>p+(x1===x0?0.5:(v-x0)/(x1-x0))*(W-2*p),Y=v=>H-p-((v-y0)/(y1-y0))*(H-2*p);
-    const pts=w.map(x=>X(+parseDate(x.d))+','+Y(x.kg)).join(' ');
-    h+=`<div class="card"><svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Kilo grafiği"><polyline points="${pts}" fill="none" stroke="var(--pri)" stroke-width="2.5" stroke-linejoin="round"/>${w.map(x=>`<circle cx="${X(+parseDate(x.d))}" cy="${Y(x.kg)}" r="4" fill="var(--pri)"/><text x="${X(+parseDate(x.d))}" y="${Y(x.kg)-9}" text-anchor="middle">${x.kg}</text>`).join('')}<text x="${p}" y="${H-6}" text-anchor="start">${fmtShort(x0)}</text><text x="${W-p}" y="${H-6}" text-anchor="end">${fmtShort(x1)}</text></svg></div>`;
+    h+=growthChart(growthTab);
+    const l=lastPct(growthTab);
+    if(l){const r=Math.round(l.p);h+=`<div class="card"><b>Son ölçüm: ${f1(l.v)} ${gk.u}</b> <span class="mute">(${fmtDate(parseDate(l.d))})</span><div style="margin-top:4px">${pctText(l.p)}${l.p>=1&&l.p<=99?`: aynı yaştaki 100 ${S.baby.sex==='f'?'kız':'erkek'} bebekten yaklaşık ${r} tanesinden daha ${gk.hi}.`:'.'}</div></div>`;}
+    else h+=`<div class="card mute">Henüz ${gk.t.toLowerCase()} ölçümü yok. Ölçüm ekleyince eğrinin üstünde görünür.</div>`;
+    h+=`<div class="foot">Eğriler Dünya Sağlık Örgütü büyüme standartlarıdır. 3 ile 97 arasındaki değerler beklenen aralık kabul edilir. Tek bir ölçümden çok, ölçümlerin zaman içinde kendi eğrisini izlemesi önemlidir. Değerlendirmeyi doktor yapar.</div>`;
   }
   h+=`<h2>Ölçümler</h2>`;
   if(!g.length)h+=`<div class="card mute">Henüz ölçüm yok.</div>`;
   for(const x of [...g].reverse())h+=`<button class="item" data-act="openGrowth" data-id="${x.id}"><span class="ic">📏</span><span class="tx">${fmtDate(parseDate(x.d))}<small>${[x.kg?x.kg+' kg':'',x.cm?x.cm+' cm boy':'',x.head?x.head+' cm baş':''].filter(Boolean).join(' · ')}</small></span><span class="mute">›</span></button>`;
+  return h;
+}
+
+/* ---------- doktor özeti ---------- */
+function docData(){
+  const now=Date.now(),a7=avgStats(7),a14=avgStats(14);
+  const vi=S.baby.birth?vaxItems():[],done=vi.filter(i=>i.done).sort((a,b)=>String(b.done).localeCompare(String(a.done))),next=vi.filter(i=>!i.done&&i.due&&!i.g.note).sort((a,b)=>a.due-b.due);
+  const nd=next[0]?next.filter(i=>+i.due===+next[0].due):[];
+  const temps=S.events.filter(e=>e.type==='temp'&&now-e.t<14*864e5).sort((a,b)=>b.c-a.c);
+  const appt=S.appts.filter(x=>x.t>=now-36e5).sort((a,b)=>a.t-b.t)[0];
+  return {a7,a14,done,nd,temps,appt,gw:lastPct('w'),gl:lastPct('l'),gh:lastPct('h'),meds:S.meds.filter(m=>!m.off),qs:[...S.qs].sort((a,b)=>(a.done-b.done)||(a.c-b.c))};
+}
+function avgLines(a){
+  if(!a.days)return [];
+  const o=['Beslenme: günde '+f1(a.feedN)+' kez, toplam '+Math.round(a.ml)+' ml'+(a.mlPer?' (öğün başı '+Math.round(a.mlPer)+' ml)':''),
+    'Tür: günde '+f1(a.bm)+' anne sütü, '+f1(a.fm)+' mama'];
+  if(a.gap)o.push('Beslenme aralığı: ortalama '+dur(a.gap));
+  o.push('Bez: günde '+f1(a.wet)+' ıslak, '+f1(a.dirty)+' kirli');
+  if(a.slN)o.push('Uyku: günde '+dur(a.slDay)+' ('+f1(a.slN)+' uyku)');
+  if(a.puN)o.push('Sağım: günde '+Math.round(a.puMl)+' ml');
+  return o;
+}
+function docSections(){
+  const d=docData(),sec=[];
+  sec.push(['Bebek',[(S.baby.name||'Bebek')+' · '+ageText()+(S.baby.birth?' (doğum: '+fmtDate(parseDate(S.baby.birth))+')':'')]]);
+  const gr=[['Kilo','gw','kg'],['Boy','gl','cm'],['Baş çevresi','gh','cm']].filter(x=>d[x[1]]).map(x=>x[0]+': '+f1(d[x[1]].v)+' '+x[2]+' · '+pctText(d[x[1]].p)+' ('+fmtShort(parseDate(d[x[1]].d))+')');
+  sec.push(['Son ölçümler',gr.length?gr:['Ölçüm girilmedi']]);
+  sec.push(['Son 7 gün ortalaması',avgLines(d.a7).length?avgLines(d.a7):['Yeterli kayıt yok']]);
+  if(d.a14.days>d.a7.days)sec.push(['Son 14 gün ortalaması',avgLines(d.a14)]);
+  sec.push(['Ateş (son 14 gün)',d.temps.length?['En yüksek: '+f1(d.temps[0].c)+' °C ('+fmtShort(d.temps[0].t)+' '+hm(d.temps[0].t)+')',d.temps.length+' ölçüm, 38 °C ve üzeri: '+d.temps.filter(t=>t.c>=38).length]:['Ateş kaydı yok']]);
+  sec.push(['İlaç ve vitaminler',d.meds.length?d.meds.map(m=>m.name+(m.dose?' · '+m.dose:'')+((m.times||[]).length?' · '+m.times.join(', '):' · gerektiğinde')):['Kayıtlı ilaç yok']]);
+  const vx=[];if(d.done.length)vx.push('Son yapılan: '+d.done[0].name+' ('+fmtShort(parseDate(d.done[0].done))+')');
+  if(d.nd.length)vx.push('Sıradaki: '+d.nd.map(i=>i.name).join(', ')+' ('+fmtDate(d.nd[0].due)+')');
+  sec.push(['Aşılar',vx.length?vx:['Aşı bilgisi yok']]);
+  return {d,sec};
+}
+function docText(){
+  const {d,sec}=docSections();
+  let t='BEBEK TAKİP · DOKTOR ÖZETİ ('+fmtDate(Date.now())+')\n';
+  sec.forEach(([h,l])=>{t+='\n'+h.toLocaleUpperCase('tr-TR')+'\n'+l.map(x=>'- '+x).join('\n')+'\n';});
+  const open=d.qs.filter(q=>!q.done);
+  if(open.length)t+='\nDOKTORA SORULACAKLAR\n'+open.map(q=>'- '+q.text).join('\n')+'\n';
+  return t;
+}
+function vDoc(){
+  const {d,sec}=docSections();
+  let h='';
+  if(d.appt)h+=`<div class="card hint"><b>Sıradaki randevu</b><p style="margin-bottom:0">${esc(d.appt.title||'Muayene')} · ${esc(dtLong(d.appt.t))} ${hm(d.appt.t)}${d.appt.place?' · '+esc(d.appt.place):''}</p></div>`;
+  h+=`<h2>❓ Doktora sorulacaklar</h2><div class="row" style="gap:8px;margin-bottom:8px"><input type="text" id="q-text" placeholder="Aklına gelen soruyu yaz" style="flex:1"><button class="btn pri" data-act="qAdd">Ekle</button></div>`;
+  if(!d.qs.length)h+=`<div class="card mute">Soru yok. Aklına geldikçe ekle, muayenede buradan bakarsın.</div>`;
+  d.qs.forEach(q=>{h+=`<div class="item"><button class="check ${q.done?'on':''}" data-act="qToggle" data-id="${q.id}" aria-label="Soruldu">${q.done?'✓':''}</button><span class="tx" style="${q.done?'text-decoration:line-through;color:var(--mute)':''}">${esc(q.text)}</span><button class="btn sm ghost" data-act="qDel" data-id="${q.id}" aria-label="Sil">✕</button></div>`;});
+  sec.forEach(([t,l])=>{h+=`<h2>${esc(t)}</h2><div class="card" style="line-height:1.55">${l.map(x=>`<div>${esc(x)}</div>`).join('')}</div>`;});
+  h+=`<button class="btn block" data-act="docCopy">📋 Özeti metin olarak kopyala</button><div class="foot">Ortalamalar bugünü içermez ve yalnızca kayıt girilen günlerden hesaplanır.</div>`;
   return h;
 }
 
@@ -625,6 +784,30 @@ function openBottle(){
   ${dtRow()}
   <button class="btn pri block" style="margin-top:16px" data-act="saveBottle">Kaydet</button>`);
 }
+function openPump(){
+  openSheet(`<h3>🥛 Sağım</h3>
+  <label>Sağılan miktar (ml)</label><input type="number" id="f-ml" inputmode="numeric" placeholder="80">
+  <div class="chips">${[30,60,90,120,150,180].map(v=>`<button data-act="ml" data-v="${v}">${v}</button>`).join('')}</div>
+  ${dtRow()}
+  <button class="btn pri block" style="margin-top:16px" data-act="savePump">Kaydet</button>`);
+}
+function tempVal(){const c=num($('#f-c').value);if(!(c>=34&&c<=43)){flash('Dereceyi gir (örn. 37,5)');return null;}return Math.round(c*10)/10;}
+function tempHint(){
+  const el=$('#tempHint');if(!el)return;const c=num($('#f-c').value),am=ageMonthsAt(Date.now());
+  el.className=c>=38?'bad':'mute';
+  el.textContent=!(c>=38)?'':am!==null&&am<3?'3 aydan küçük bebekte 38 °C ve üzeri ateşte beklemeden doktoru ara.':'38 °C ve üzeri ateş. Doktorunun önerdiği şekilde hareket et; bebek halsizse ya da ateş düşmüyorsa doktoru ara.';
+}
+function openTemp(){
+  const m=lastFeverMed(),now=Date.now();
+  openSheet(`<h3>🌡️ Ateş ölçümü</h3>
+  <label>Derece (°C)</label><input type="text" id="f-c" inputmode="decimal" placeholder="37,5" data-inp="tempHint">
+  <div id="tempHint" style="margin-top:8px;font-size:14px;font-weight:600"></div>
+  <label>Not (isteğe bağlı)</label><input type="text" id="f-note" placeholder="Koltuk altı, aşıdan sonra…">
+  ${dtRow()}
+  <div class="mute" style="margin-top:10px;font-size:14px">${m?'Son ateş düşürücü: '+esc(m.name)+(m.dose?' · '+esc(m.dose):'')+' · '+ago(now-m.t)+' ('+fmtShort(m.t)+' '+hm(m.t)+')':'Verilen ateş düşürücüyü İlaç sekmesinden "Verdim" ile kaydedersen son doz saati burada görünür.'}</div>
+  <button class="btn pri block" style="margin-top:16px" data-act="saveTemp">Kaydet</button>
+  <button class="btn block" style="margin-top:10px" data-act="tab" data-v="med">💊 İlaç sekmesine git</button>`);
+}
 function openDiaper(){
   sel={};
   openSheet(`<h3>🧷 Bez</h3>
@@ -642,11 +825,15 @@ function openEv(id){
   else if(e.type==='sleep')f='';
   else if(e.type==='bottle')f=seg('bk',[['Anne sütü','Anne sütü'],['Mama','Mama']],e.kind||'Anne sütü')+`<label>Miktar (ml)</label><input type="number" id="f-ml" inputmode="numeric" value="${e.ml||''}">`;
   else if(e.type==='diaper')f=seg('dk',[['wet','💧 Islak'],['dirty','💩 Kirli'],['both','💧💩 İkisi']],e.kind)+`<div id="colorRow" ${e.kind==='wet'?'hidden':''}><label>Renk (isteğe bağlı)</label><div class="chips">${['Sarı','Yeşil','Kahverengi','Koyu'].map(c=>`<button class="${e.color===c?'on':''}" data-act="col" data-v="${c}">${c}</button>`).join('')}</div></div>`;
+  else if(e.type==='pump')f=`<label>Sağılan miktar (ml)</label><input type="number" id="f-ml" inputmode="numeric" value="${e.ml||''}">`;
+  else if(e.type==='temp')f=`<label>Derece (°C)</label><input type="text" id="f-c" inputmode="decimal" value="${f1(e.c)}" data-inp="tempHint"><div id="tempHint" style="margin-top:8px;font-size:14px;font-weight:600"></div><label>Not</label><input type="text" id="f-note" value="${esc(e.note||'')}">`;
   else f=`<div class="mute">${esc(i.s||'')}</div>`;
+  if(e.by)f+=`<div class="mute" style="margin-top:10px;font-size:13px">Kaydı giren: ${esc(e.by)}</div>`;
   const sl=e.type==='sleep';
   openSheet(`<h3>${i.ic} ${esc(i.t)} · düzenle</h3>${sl?sleepRow(e.t,e.t+(e.dur||0)):dtRow(e.t)}<div style="height:12px"></div>${f}
   <button class="btn pri block" style="margin-top:16px" data-act="saveEv" data-id="${id}">Kaydet</button>${delBlock('delEv',id)}<button class="btn block" style="margin-top:10px" data-act="close">Kapat</button>`);
   if(sl)sleepSum();
+  tempHint();
 }
 function openMed(id){
   const m=S.meds.find(x=>x.id===id)||{};sel={medId:id||''};
@@ -684,9 +871,13 @@ function applyTheme(){
 }
 function setTheme(t){try{if(t==='auto')localStorage.removeItem('bt_theme');else localStorage.setItem('bt_theme',t);}catch(e){}applyTheme();}
 function openSettings(){
+  sel={sex:S.baby.sex||'m'};
   openSheet(`<h3>⚙️ Bebek bilgileri</h3>
   <label>Adı</label><input type="text" id="s-name" value="${esc(S.baby.name)}" placeholder="Bebeğin adı">
   <label>Doğum tarihi</label><input type="date" id="s-birth" value="${esc(S.baby.birth)}">
+  <label>Cinsiyet (büyüme eğrisi için)</label><div class="seg"><button class="${sel.sex==='m'?'on':''}" data-act="seg" data-g="sex" data-v="m">Erkek</button><button class="${sel.sex==='f'?'on':''}" data-act="seg" data-g="sex" data-v="f">Kız</button></div>
+  <label>Bu telefonu kullanan (kayıtlarda görünür)</label><input type="text" id="s-who" value="${esc(who())}" placeholder="Anne, Baba…" maxlength="20">
+  <div class="chips">${['Anne','Baba'].map(n=>`<button data-act="whoName" data-v="${n}">${n}</button>`).join('')}</div>
   <button class="btn pri block" style="margin-top:16px" data-act="saveSettings">Kaydet</button>
   ${FID?`<h3 style="margin-top:26px">Aile kodu</h3>
   <div class="mute" style="font-size:14px;margin-bottom:8px">Eşin bu kodla ya da aşağıdaki davet linkiyle aynı kayıtları görür. Kodu sadece eşinle paylaş.</div>
@@ -701,12 +892,30 @@ function openSettings(){
   <h3 style="margin-top:26px">Görünüm (bu telefon)</h3>
   <div class="three" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">${[['auto','Otomatik'],['light','Açık'],['dark','Koyu']].map(([v,l])=>`<button class="btn${themePref()===v?' pri':''}" data-act="theme" data-v="${v}">${l}</button>`).join('')}</div>
   <h3 style="margin-top:26px">Yedek</h3>
-  <div class="mute" style="font-size:14px;margin-bottom:8px">Telefon değiştirirsen ya da emin olmak istersen verileri kopyalayıp bir yere (not, e-posta) yapıştır.</div>
+  <div class="mute" style="font-size:14px;margin-bottom:8px">Yedek, bütün kayıtları tek dosyada toplar. Ayda bir alıp e-postana ya da Drive'a atman yeterli. ${lastBackupText()}</div>
+  <button class="btn pri block" data-act="backupFile">💾 Yedeği dosya olarak indir</button>
+  <label class="btn block" style="margin-top:10px;display:flex;align-items:center;justify-content:center">📂 Dosyadan geri yükle<input type="file" accept=".json,application/json,text/plain" data-chg="restoreFile" hidden></label>
+  <div class="or">veya metin olarak</div>
   <button class="btn block" data-act="backup">Yedeği göster ve kopyala</button>
   <textarea id="s-backup" style="margin-top:10px" placeholder="Yedek metni burada görünür. Geri yüklemek için buraya yapıştır."></textarea>
   <button class="btn block" style="margin-top:10px" data-act="restore">Yapıştırılan yedeği geri yükle</button>
   <button class="btn block ghost" style="margin-top:10px" data-act="close">Kapat</button>
   <div class="foot" style="text-align:center">Bebek Takip · Sürüm ${VERSION} · ${BUILD}</div>`);
+}
+
+function lastBackupText(){try{const t=+localStorage.getItem('bt_backup');return t?'Son yedek: '+fmtDate(t)+'.':'Henüz yedek alınmadı.';}catch(e){return '';}}
+function backupJSON(){return allEvents().then(ev=>JSON.stringify(Object.assign({},S,{events:ev,timers:{},_v:VERSION,_at:Date.now()})));}
+function markBackup(){try{localStorage.setItem('bt_backup',String(Date.now()));}catch(e){}}
+function doRestore(txt){
+  try{const o=JSON.parse(txt);if(!o||!Array.isArray(o.events))throw 0;
+    const mg=(a,b)=>{const ids=new Set(a.map(x=>x.id));return a.concat((b||[]).filter(x=>x&&x.id&&!ids.has(x.id)));};
+    const n0=S.events.length;
+    S.events=mg(S.events,o.events);S.meds=mg(S.meds,o.meds);S.appts=mg(S.appts,o.appts);S.notes=mg(S.notes,o.notes);S.qs=mg(S.qs,o.qs);
+    S.growth=mg(S.growth,(o.growth||[]).map(g=>Object.assign({},g,{kg:g.kg>30?Math.round(g.kg)/1000:g.kg})));
+    S.vax=Object.assign({},o.vax||{},S.vax);
+    if(o.baby&&(o.baby.name||o.baby.birth)&&!(S.baby.name||S.baby.birth))S.baby=o.baby;
+    S.events.forEach(e=>{if(SINCE&&e.t<SINCE)oldEv.set(e.id,e);});
+    save();closeSheet();render();flash('Geri yüklendi ('+(S.events.length-n0)+' yeni kayıt)');}catch(e){flash('Yedek okunamadı');}
 }
 
 /* ---------- eylemler ---------- */
@@ -718,7 +927,7 @@ function copyText(t){
   try{navigator.clipboard.writeText(t).then(()=>flash('Kopyalandı'),()=>flash('Kopyalanamadı'));}catch(e){flash('Kopyalanamadı');}
 }
 const H={
-  tab(el){tab=el.dataset.v;if(el.dataset.topic!==undefined)infoTopic=el.dataset.topic;render();scrollTo(0,0);},
+  tab(el){if(!$('#sheet').hidden)closeSheet();tab=el.dataset.v;if(el.dataset.topic!==undefined)infoTopic=el.dataset.topic;render();scrollTo(0,0);},
   infoOpen(el){infoTopic=el.dataset.id;render();scrollTo(0,0);},
   openAppt(el){openAppt(el.dataset.id);},
   apptTitle(el){$('#a-title').value=el.dataset.v;},
@@ -748,30 +957,44 @@ const H={
   ml(el){$('#f-ml').value=el.dataset.v;},
   sleepSum(){sleepSum();},
   medName(el){$('#m-name').value=el.dataset.v;},
-  qBottle:openBottle,qDiaper:openDiaper,qSleep:openSleep,
+  qBottle:openBottle,qDiaper:openDiaper,qSleep:openSleep,qPump:openPump,qTemp:openTemp,
+  whoName(el){$('#s-who').value=el.dataset.v;},
+  tempHint(){tempHint();},
+  repeatBottle(){const l=[...S.events].filter(e=>e.type==='bottle').sort((a,b)=>b.t-a.t)[0];if(!l)return;
+    if(Date.now()-l.t<5*60000)return flash('Az önce kaydedildi (5 dk içinde tekrar edilmez)');
+    addEv({id:uid(),type:'bottle',t:Date.now(),ml:l.ml,kind:l.kind||'Anne sütü'});save();render();flash(l.ml+' ml '+(l.kind||'')+' kaydedildi');},
+  savePump(){const ml=num($('#f-ml').value);if(!(ml>0))return flash('Miktarı gir');const t=tAt('f-time','f-date');if(t===null)return;addEv({id:uid(),type:'pump',t,ml:Math.round(ml)});save();closeSheet();render();flash('Kaydedildi');},
+  saveTemp(){const c=tempVal();if(c===null)return;const t=tAt('f-time','f-date');if(t===null)return;const e={id:uid(),type:'temp',t,c},n=$('#f-note').value.trim();if(n)e.note=n;addEv(e);save();closeSheet();render();flash('Kaydedildi');},
+  growthTab(el){growthTab=el.dataset.v;render();},
+  qAdd(){const i=$('#q-text'),v=i.value.trim();if(!v)return flash('Soruyu yaz');S.qs.push({id:uid(),text:v,c:Date.now(),done:false});save();render();},
+  qToggle(el){const q=S.qs.find(x=>x.id===el.dataset.id);if(q){q.done=!q.done;save();render();}},
+  qDel(el){S.qs=S.qs.filter(x=>x.id!==el.dataset.id);save();render();},
+  docCopy(){copyText(docText());},
   startTimer(el){const k=el.dataset.k;S.timers[k]={start:Date.now()};if(k==='breast')S.timers[k].side=sel.side||'Sol';save();closeSheet();render();},
-  stopTimer(el){const k=el.dataset.k,t=S.timers[k];if(!t)return;const e={id:uid(),type:k,t:t.start,dur:Date.now()-t.start};if(k==='breast')e.side=t.side;S.events.push(e);delete S.timers[k];save();render();flash('Kaydedildi');},
+  stopTimer(el){const k=el.dataset.k,t=S.timers[k];if(!t)return;const e={id:uid(),type:k,t:t.start,dur:Date.now()-t.start};if(k==='breast')e.side=t.side;addEv(e);delete S.timers[k];save();render();flash('Kaydedildi');},
   cancelTimer(el){delete S.timers[el.dataset.k];save();render();},
-  saveSleep(){const r=sleepAt();if(!r)return;S.events.push({id:uid(),type:'sleep',t:r.t,dur:r.dur});save();closeSheet();render();flash('Kaydedildi');},
-  saveBottle(){const ml=num($('#f-ml').value);if(!(ml>0))return flash('Miktarı gir');const t=tAt('f-time','f-date');if(t===null)return;S.events.push({id:uid(),type:'bottle',t,ml:Math.round(ml),kind:sel.bk||'Anne sütü'});save();closeSheet();render();flash('Kaydedildi');},
-  saveDiaper(){if(!sel.dk)return flash('Islak mı kirli mi seç');const t=tAt('f-time','f-date');if(t===null)return;const e={id:uid(),type:'diaper',t,kind:sel.dk};if(sel.col&&sel.dk!=='wet')e.color=sel.col;S.events.push(e);save();closeSheet();render();flash('Kaydedildi');},
+  saveSleep(){const r=sleepAt();if(!r)return;addEv({id:uid(),type:'sleep',t:r.t,dur:r.dur});save();closeSheet();render();flash('Kaydedildi');},
+  saveBottle(){const ml=num($('#f-ml').value);if(!(ml>0))return flash('Miktarı gir');const t=tAt('f-time','f-date');if(t===null)return;addEv({id:uid(),type:'bottle',t,ml:Math.round(ml),kind:sel.bk||'Anne sütü'});save();closeSheet();render();flash('Kaydedildi');},
+  saveDiaper(){if(!sel.dk)return flash('Islak mı kirli mi seç');const t=tAt('f-time','f-date');if(t===null)return;const e={id:uid(),type:'diaper',t,kind:sel.dk};if(sel.col&&sel.dk!=='wet')e.color=sel.col;addEv(e);save();closeSheet();render();flash('Kaydedildi');},
   openEv(el){openEv(el.dataset.id);},
   saveEv(el){
     const e=S.events.find(x=>x.id===el.dataset.id);if(!e)return;
-    if(e.type==='sleep'){const r=sleepAt();if(!r)return;e.t=r.t;e.dur=r.dur;save();closeSheet();render();flash('Güncellendi');return;}
+    if(e.type==='sleep'){const r=sleepAt();if(!r)return;e.t=r.t;e.dur=r.dur;keepOld(e);save();closeSheet();render();flash('Güncellendi');return;}
     const t=tAt('f-time','f-date');if(t===null)return;
     if(e.type==='breast'){const m=num($('#f-dur').value);if(!(m>0))return flash('Süreyi gir');e.dur=m*60000;e.side=sel.side||'Sol';}
     if(e.type==='bottle'){const ml=num($('#f-ml').value);if(!(ml>0))return flash('Miktarı gir');e.ml=Math.round(ml);e.kind=sel.bk||'Anne sütü';}
     if(e.type==='diaper'){if(!sel.dk)return flash('Islak mı kirli mi seç');e.kind=sel.dk;if(sel.col&&sel.dk!=='wet')e.color=sel.col;else delete e.color;}
-    e.t=t;save();closeSheet();render();flash('Güncellendi');
+    if(e.type==='pump'){const ml=num($('#f-ml').value);if(!(ml>0))return flash('Miktarı gir');e.ml=Math.round(ml);}
+    if(e.type==='temp'){const c=tempVal();if(c===null)return;e.c=c;const n=$('#f-note').value.trim();if(n)e.note=n;else delete e.note;}
+    e.t=t;keepOld(e);save();closeSheet();render();flash('Güncellendi');
   },
   dayGo(el){const d=parseDate(vday());d.setDate(d.getDate()+(+el.dataset.v));const k=dayKey(d.getTime());viewDay=k>=todayStr()?'':k;render();},
   dayPick(el){const v=el.value;viewDay=!v||v>=todayStr()?'':v;render();},
-  delEv(el){S.events=S.events.filter(e=>e.id!==el.dataset.id);save();closeSheet();render();},
+  delEv(el){oldEv.delete(el.dataset.id);S.events=S.events.filter(e=>e.id!==el.dataset.id);save();closeSheet();render();},
   medSlot(el){const {id,slot}=el.dataset,i=S.events.findIndex(e=>e.type==='med'&&e.medId===id&&e.slot===slot);
-    if(i>=0)S.events.splice(i,1);else{const m=S.meds.find(x=>x.id===id);S.events.push({id:uid(),type:'med',medId:id,name:m.name,dose:m.dose,slot,t:Date.now()});}
+    if(i>=0)S.events.splice(i,1);else{const m=S.meds.find(x=>x.id===id);addEv({id:uid(),type:'med',medId:id,name:m.name,dose:m.dose,slot,t:Date.now()});}
     save();render();},
-  medNow(el){const m=S.meds.find(x=>x.id===el.dataset.id);S.events.push({id:uid(),type:'med',medId:m.id,name:m.name,dose:m.dose,t:Date.now()});save();render();flash(m.name+' kaydedildi');},
+  medNow(el){const m=S.meds.find(x=>x.id===el.dataset.id);addEv({id:uid(),type:'med',medId:m.id,name:m.name,dose:m.dose,t:Date.now()});save();render();flash(m.name+' kaydedildi');},
   openMed(el){openMed(el.dataset.id);},
   saveMed(){const name=$('#m-name').value.trim();if(!name)return flash('İlaç adını gir');
     const times=$('#m-times').value.split(/[\s,;]+/).filter(t=>/^\d{1,2}:\d{2}$/.test(t)).map(t=>{const [h,m]=t.split(':');return pad(+h)+':'+m;}).sort();
@@ -788,16 +1011,18 @@ const H={
     let x=S.growth.find(g=>g.id===el.dataset.id);if(!x){x={id:uid()};S.growth.push(x);}
     x.d=$('#g-date').value||todayStr();x.kg=isNaN(kg)?null:kg;x.cm=isNaN(cm)?null:cm;x.head=isNaN(hd)?null:hd;save();closeSheet();render();},
   delGrowth(el){S.growth=S.growth.filter(g=>g.id!==el.dataset.id);save();closeSheet();render();},
-  saveSettings(){S.baby.name=$('#s-name').value.trim();S.baby.birth=$('#s-birth').value;save();closeSheet();render();},
-  backup(){const ta=$('#s-backup');ta.value=JSON.stringify(S);ta.select();
-    try{navigator.clipboard.writeText(ta.value).then(()=>flash('Kopyalandı'),()=>flash('Metni elle kopyala'));}catch(e){flash('Metni elle kopyala');}},
-  restore(){try{const o=JSON.parse($('#s-backup').value);if(!o||!Array.isArray(o.events))throw 0;
-    const mg=(a,b)=>{const ids=new Set(a.map(x=>x.id));return a.concat((b||[]).filter(x=>x&&x.id&&!ids.has(x.id)));};
-    S.events=mg(S.events,o.events);S.meds=mg(S.meds,o.meds);S.appts=mg(S.appts,o.appts);S.notes=mg(S.notes,o.notes);
-    S.growth=mg(S.growth,(o.growth||[]).map(g=>Object.assign({},g,{kg:g.kg>30?Math.round(g.kg)/1000:g.kg})));
-    S.vax=Object.assign({},o.vax||{},S.vax);
-    if(o.baby&&(o.baby.name||o.baby.birth)&&!(S.baby.name||S.baby.birth))S.baby=o.baby;
-    save();closeSheet();render();flash('Geri yüklendi');}catch(e){flash('Yedek metni okunamadı');}},
+  saveSettings(){S.baby.name=$('#s-name').value.trim();S.baby.birth=$('#s-birth').value;if(sel.sex)S.baby.sex=sel.sex;try{const w=$('#s-who').value.trim();if(w)localStorage.setItem('bt_who',w);else localStorage.removeItem('bt_who');}catch(e){}save();closeSheet();render();},
+  backup(){backupJSON().then(js=>{const ta=$('#s-backup');if(!ta)return;ta.value=js;ta.select();markBackup();
+    try{navigator.clipboard.writeText(js).then(()=>flash('Kopyalandı'),()=>flash('Metni elle kopyala'));}catch(e){flash('Metni elle kopyala');}});},
+  backupFile(){flash('Yedek hazırlanıyor…');backupJSON().then(async js=>{
+    const name='bebek-takip-yedek-'+todayStr()+'.json',blob=new Blob([js],{type:'application/json'});
+    const ios=/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+    if(ios){try{const file=new File([blob],name,{type:'application/json'});
+      if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:'Bebek Takip yedeği'});markBackup();return;}}catch(e){if(e&&e.name==='AbortError')return;}}
+    const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),30000);markBackup();flash('Yedek dosyası indi');});},
+  restoreFile(el){const f=el.files&&el.files[0];if(!f)return;const r=new FileReader();r.onload=()=>doRestore(String(r.result||''));r.onerror=()=>flash('Dosya okunamadı');r.readAsText(f);},
+  restore(){doRestore($('#s-backup').value);},
   vaxImg(){vaxSave(false);},
   vaxShare(){vaxSave(true);},
   icsVax(){saveICS('bebek-asi-takvimi.ics',vaxICS());},
@@ -815,6 +1040,7 @@ document.addEventListener('click',e=>{
   const f=H[el.dataset.act];if(f)f(el,e);
 });
 
+document.addEventListener('input',e=>{const el=e.target.closest&&e.target.closest('[data-inp]');if(el&&H[el.dataset.inp])H[el.dataset.inp](el);});
 document.addEventListener('change',e=>{const el=e.target.closest&&e.target.closest('[data-chg]');if(el&&H[el.dataset.chg])H[el.dataset.chg](el);});
 
 /* ---------- başlat ---------- */
