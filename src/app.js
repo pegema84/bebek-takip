@@ -11,7 +11,7 @@ const FB={
   messagingSenderId:"386088030461",
   appId:"1:386088030461:web:563d1e025a90fe2aab6e94"
 };
-const VERSION='1.7',BUILD='16 Kasım 2026';
+const VERSION='1.8',BUILD='16 Kasım 2026';
 const FAM_KEY='bebektakip.family';
 const COLS=['events','meds','growth','vax','timers','meta','appts','notes'];
 let S={baby:{name:'',birth:''},events:[],meds:[],vax:{},growth:[],timers:{},appts:[],notes:[]};
@@ -372,6 +372,83 @@ function vaxItems(){
   ALLV.forEach(g=>g.v.forEach((name,i)=>{const id=gk(g)+'-'+i;out.push({id,g,name,done:S.vax[id]||null,due:b?addMonths(b,g.m):null});}));
   return out;
 }
+/* ---------- aşı takvimi resmi (her seferinde güncel veriden üretilir) ---------- */
+function vaxImage(){
+  const W=1200,P=56,FONT='system-ui,-apple-system,"Segoe UI",Roboto,sans-serif';
+  const items=vaxItems(),today=parseDate(todayStr()),dd=d=>Math.round((d-today)/864e5);
+  const fd=d=>new Date(d).toLocaleDateString('tr-TR',{day:'numeric',month:'short',year:'numeric'});
+  const C={bg:'#fbf7f2',card:'#ffffff',ink:'#2b2a33',mute:'#7b7885',line:'#e6ddd3',pri:'#2f8478',ok:'#2f8478',warn:'#c9741c',bad:'#cc3d49'};
+  const cv=document.createElement('canvas'),x=cv.getContext('2d');
+  const fnt=(sz,w)=>`${w||400} ${sz}px ${FONT}`;
+  const wrap=(t,w,f)=>{x.font=f;const out=[];let cur='';for(const wd of String(t).split(' ')){const n=cur?cur+' '+wd:wd;if(x.measureText(n).width>w&&cur){out.push(cur);cur=wd;}else cur=n;}if(cur)out.push(cur);return out;};
+  const rr=(X,Y,w,h,r,fill,stroke)=>{x.beginPath();x.roundRect?x.roundRect(X,Y,w,h,r):x.rect(X,Y,w,h);if(fill){x.fillStyle=fill;x.fill();}if(stroke){x.strokeStyle=stroke;x.lineWidth=2;x.stroke();}};
+  const txt=(t,X,Y,f,col,al)=>{x.font=f;x.fillStyle=col;x.textAlign=al||'left';x.textBaseline='alphabetic';x.fillText(t,X,Y);};
+  const nm=S.baby.name||'Bebek',tot=items.length,dn=items.filter(i=>i.done).length,late=items.filter(i=>!i.done&&dd(i.due)<0).length;
+  const paint=draw=>{
+    let y=0;const D=fn=>{if(draw)fn();};
+    D(()=>{x.fillStyle=C.bg;x.fillRect(0,0,W,cv.height/cv.__sc);});
+    // üst bant
+    D(()=>{rr(0,0,W,250,0,C.pri);});
+    D(()=>{txt(nm+' · Aşı Takvimi',P,112,fnt(60,800),'#fff');});
+    D(()=>{txt('Doğum: '+(S.baby.birth?fmtDate(parseDate(S.baby.birth)):'—')+'  ·  Yaş: '+ageText(),P,164,fnt(30,500),'rgba(255,255,255,.92)');});
+    D(()=>{txt(dn+' / '+tot+' aşı yapıldı'+(late?'  ·  '+late+' gecikmiş':''),P,214,fnt(30,700),'#fff');});
+    y=250+36;
+    const section=(g)=>{
+      const gi=items.filter(i=>i.g===g),gdone=gi.filter(i=>i.done).length;
+      const note=g.note||g.info||'';
+      const nl=note?wrap(note,W-2*P-40,fnt(24,400)):[];
+      const hh=70+(nl.length?nl.length*32+10:0)+gi.length*86+16;
+      D(()=>{rr(P-12,y,W-2*P+24,hh,26,C.card,C.line);});
+      D(()=>{txt(g.l,P+16,y+46,fnt(36,800),g.k?C.warn:C.ink);});
+      D(()=>{txt(fd(gi[0].due)+(gdone===gi.length?'  ✓':''),W-P-16,y+46,fnt(30,600),gdone===gi.length?C.ok:C.mute,'right');});
+      let yy=y+70;
+      if(nl.length){nl.forEach((l,k)=>D(()=>txt(l,P+16,yy+28+k*32,fnt(24,400),C.mute)));yy+=nl.length*32+10;}
+      gi.forEach(i=>{
+        const d=dd(i.due);
+        D(()=>{x.beginPath();x.arc(P+38,yy+40,17,0,7);x.fillStyle=i.done?C.ok:C.card;x.fill();x.strokeStyle=i.done?C.ok:C.line;x.lineWidth=3;x.stroke();
+          if(i.done){x.beginPath();x.moveTo(P+29,yy+40);x.lineTo(P+36,yy+48);x.lineTo(P+49,yy+31);x.strokeStyle='#fff';x.lineWidth=4;x.lineCap='round';x.lineJoin='round';x.stroke();}});
+        D(()=>{txt(i.name+(g.k?'  (özel)':''),P+76,yy+38,fnt(32,600),C.ink);});
+        D(()=>{txt(i.done?'Yapıldığı tarih: '+fd(parseDate(i.done)):'Önerilen: '+fd(i.due),P+76,yy+70,fnt(24,400),C.mute);});
+        const st=i.done?['Yapıldı',C.ok]:d<0?[-d+' gün gecikti',C.bad]:d===0?['Bugün',C.warn]:d<=14?[d+' gün kaldı',C.warn]:[d>60?Math.round(d/30)+' ay sonra':d+' gün sonra',C.mute];
+        D(()=>{txt(st[0],W-P-16,yy+46,fnt(30,700),st[1],'right');});
+        yy+=86;
+      });
+      y+=hh+22;
+    };
+    for(const g of VAX)section(g);
+    if(VOPT.length){
+      D(()=>{txt('Doktorun önerdiği özel aşılar',P,y+40,fnt(40,800),C.warn);});
+      D(()=>{txt('Ulusal takvimde yok, doktorun reçetesine göre eklendi.',P,y+80,fnt(26,400),C.mute);});
+      y+=110;for(const g of VOPT)section(g);
+    }
+    const fl=wrap('Takvim, T.C. Sağlık Bakanlığı ulusal çocukluk dönemi aşı takvimine göre hazırlandı. Tarihler yaklaşıktır, kesin randevuyu aile hekimi verir.',W-2*P,fnt(24,400));
+    fl.forEach((l,k)=>D(()=>txt(l,P,y+30+k*32,fnt(24,400),C.mute)));
+    y+=fl.length*32+24;
+    D(()=>{txt('Güncelleme: '+fmtDate(Date.now())+'  ·  Bebek Takip',P,y+24,fnt(24,600),C.mute);});
+    return y+70;
+  };
+  // 1. geçiş: yükseklik ölçümü, 2. geçiş: çizim
+  cv.width=W;cv.height=100;cv.__sc=1;
+  const H0=paint(false);
+  const sc=Math.min(2,Math.sqrt(15e6/(W*H0)));
+  cv.width=Math.round(W*sc);cv.height=Math.round(H0*sc);cv.__sc=sc;
+  x.scale(sc,sc);
+  paint(true);
+  return cv;
+}
+async function vaxSave(share){
+  if(!S.baby.birth)return flash('Önce doğum tarihini gir');
+  let cv;try{cv=vaxImage();}catch(err){return flash('Resim hazırlanamadı');}
+  const blob=await new Promise(r=>cv.toBlob(r,'image/png'));if(!blob)return flash('Resim hazırlanamadı');
+  const name=(S.baby.name||'bebek').toLowerCase().replace(/[^a-z0-9çğıöşü]+/gi,'-')+'-asi-takvimi-'+todayStr()+'.png';
+  const file=new File([blob],name,{type:'image/png'});
+  const ios=/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+  if((share||ios)&&navigator.canShare&&navigator.canShare({files:[file]})){
+    try{await navigator.share({files:[file],title:(S.baby.name||'Bebek')+' aşı takvimi'});}catch(err){}return;}
+  if(share)return flash('Bu cihaz paylaşımı desteklemiyor, İndir\'i kullan');
+  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),30000);flash('Resim indirildi');
+}
 function vVax(){
   if(!S.baby.birth)return `<div class="card hint"><b>Doğum tarihi gerekli</b><p>Aşı zamanlarını hesaplamak için bebeğin doğum tarihini gir.</p><button class="btn pri" data-act="gear">Bilgileri gir</button></div>`;
   const items=vaxItems(),today=parseDate(todayStr());
@@ -395,6 +472,7 @@ function vVax(){
     }
   }
   h+=`<button class="btn block" style="margin-top:14px" data-act="icsVax">📅 Aşı hatırlatmalarını takvime ekle</button>`;
+  h+=`<div class="two" style="margin-top:10px"><button class="btn" data-act="vaxImg">🖼️ Resim olarak indir</button><button class="btn" data-act="vaxShare">📤 Resmi paylaş</button></div>`;
   h+=`<div class="foot">Takvim, T.C. Sağlık Bakanlığı ulusal çocukluk dönemi aşı takvimine göre hazırlandı (altılı karma aşı Nisan 2025'ten beri geçerli). Tarihler yaklaşıktır, kesin randevuyu aile hekimin verir.</div>`;
   return h;
 }
@@ -732,6 +810,8 @@ const H={
     S.vax=Object.assign({},o.vax||{},S.vax);
     if(o.baby&&(o.baby.name||o.baby.birth)&&!(S.baby.name||S.baby.birth))S.baby=o.baby;
     save();closeSheet();render();flash('Geri yüklendi');}catch(e){flash('Yedek metni okunamadı');}},
+  vaxImg(){vaxSave(false);},
+  vaxShare(){vaxSave(true);},
   icsVax(){saveICS('bebek-asi-takvimi.ics',vaxICS());},
   icsMed(){saveICS('bebek-ilac-takvimi.ics',medICS());},
   reconnect(){reauthN=0;syncError='';lastErrMsg='';reauth();flash('Yeniden bağlanıyor…');closeSheet();render();},
