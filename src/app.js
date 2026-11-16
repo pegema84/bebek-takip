@@ -11,7 +11,7 @@ const FB={
   messagingSenderId:"386088030461",
   appId:"1:386088030461:web:563d1e025a90fe2aab6e94"
 };
-const VERSION='1.6',BUILD='16 Kasım 2026';
+const VERSION='1.7',BUILD='16 Kasım 2026';
 const FAM_KEY='bebektakip.family';
 const COLS=['events','meds','growth','vax','timers','meta','appts','notes'];
 let S={baby:{name:'',birth:''},events:[],meds:[],vax:{},growth:[],timers:{},appts:[],notes:[]};
@@ -130,6 +130,30 @@ function tAt(tid,did){
   return t;
 }
 const dtRow=t=>`<div class="two"><div><label>Tarih</label><input type="date" id="f-date" value="${t?dayKey(t):vday()}" max="${todayStr()}"></div><div><label>Saat</label><input type="time" id="f-time" value="${t?hm(t):nowHM()}"></div></div>`;
+/* uyku: başlangıç + bitiş saati (süre otomatik; tarih = bitiş günü, başlangıç gerekirse bir gün önce) */
+const sleepRow=(st,en)=>{const endT=en||null;
+  return `<div><label>Tarih (uyanma günü)</label><input type="date" id="f-date" value="${endT?dayKey(endT):vday()}" max="${todayStr()}" data-chg="sleepSum"></div>
+  <div class="two" style="margin-top:4px"><div><label>Uykuya dalış</label><input type="time" id="f-time" value="${st?hm(st):''}" data-chg="sleepSum"></div><div><label>Uyanış</label><input type="time" id="f-end" value="${endT?hm(endT):(vday()===todayStr()?nowHM():'')}" data-chg="sleepSum"></div></div>
+  <div id="sleepSum" class="mute" style="margin-top:8px;min-height:20px"></div>`;};
+function sleepCalc(){
+  const dv=$('#f-date').value,sv=$('#f-time').value,ev=$('#f-end').value;
+  if(!dv||!sv||!ev)return null;
+  const e=parseDate(dv),s=parseDate(dv);
+  const [eh,em]=ev.split(':').map(Number),[sh,sm]=sv.split(':').map(Number);
+  e.setHours(eh,em,0,0);s.setHours(sh,sm,0,0);
+  if(s.getTime()>=e.getTime())s.setDate(s.getDate()-1);
+  return {t:s.getTime(),end:e.getTime(),dur:e.getTime()-s.getTime()};
+}
+function sleepSum(){
+  const el=$('#sleepSum');if(!el)return;const r=sleepCalc();
+  el.textContent=r?'Süre: '+dur(r.dur)+(dayKey(r.t)!==dayKey(r.end)?' (gece, bir önceki günden)':''):'';
+}
+function sleepAt(){
+  const r=sleepCalc();if(!r){flash('Uykuya dalış ve uyanış saatini gir');return null;}
+  if(r.end>Date.now()+5*60000){flash('Gelecek bir tarih/saat girilemez');return null;}
+  if(r.dur>=24*3600000){flash('Süre 24 saatten az olmalı');return null;}
+  return r;
+}
 function tFrom(id){const v=$('#'+id).value;if(!v)return Date.now();const [h,m]=v.split(':').map(Number);const d=new Date();d.setHours(h,m,0,0);if(d.getTime()>Date.now()+5*60000)d.setDate(d.getDate()-1);return d.getTime();}
 function ageText(){
   if(!S.baby.birth)return 'Doğum tarihi girilmedi';
@@ -522,8 +546,7 @@ function openSleep(){
   openSheet(`<h3>😴 Uyku</h3>
   <button class="btn pri block" data-act="startTimer" data-k="sleep">▶ Uyudu, sayacı başlat</button>
   <div class="or">veya geçmiş kaydı elle gir</div>
-  ${dtRow()}
-  <label>Süre (dk)</label><input type="number" id="f-dur" inputmode="decimal" placeholder="45">
+  ${sleepRow()}
   <button class="btn block" style="margin-top:12px" data-act="saveSleep">Kaydet</button>`);
 }
 function openBottle(){
@@ -549,12 +572,14 @@ function openEv(id){
   const seg=(g,opts,cur)=>`<div class="seg">${opts.map(([v,l])=>`<button class="${cur===v?'on':''}" data-act="seg" data-g="${g}" data-v="${v}">${l}</button>`).join('')}</div>`;
   let f='';
   if(e.type==='breast')f=seg('side',[['Sol','Sol'],['Sağ','Sağ']],e.side||'Sol')+`<label>Süre (dk)</label><input type="number" id="f-dur" inputmode="decimal" value="${e.dur?Math.round(e.dur/60000):''}">`;
-  else if(e.type==='sleep')f=`<label>Süre (dk)</label><input type="number" id="f-dur" inputmode="decimal" value="${e.dur?Math.round(e.dur/60000):''}">`;
+  else if(e.type==='sleep')f='';
   else if(e.type==='bottle')f=seg('bk',[['Anne sütü','Anne sütü'],['Mama','Mama']],e.kind||'Anne sütü')+`<label>Miktar (ml)</label><input type="number" id="f-ml" inputmode="numeric" value="${e.ml||''}">`;
   else if(e.type==='diaper')f=seg('dk',[['wet','💧 Islak'],['dirty','💩 Kirli'],['both','💧💩 İkisi']],e.kind)+`<div id="colorRow" ${e.kind==='wet'?'hidden':''}><label>Renk (isteğe bağlı)</label><div class="chips">${['Sarı','Yeşil','Kahverengi','Koyu'].map(c=>`<button class="${e.color===c?'on':''}" data-act="col" data-v="${c}">${c}</button>`).join('')}</div></div>`;
   else f=`<div class="mute">${esc(i.s||'')}</div>`;
-  openSheet(`<h3>${i.ic} ${esc(i.t)} · düzenle</h3>${dtRow(e.t)}<div style="height:12px"></div>${f}
+  const sl=e.type==='sleep';
+  openSheet(`<h3>${i.ic} ${esc(i.t)} · düzenle</h3>${sl?sleepRow(e.t,e.t+(e.dur||0)):dtRow(e.t)}<div style="height:12px"></div>${f}
   <button class="btn pri block" style="margin-top:16px" data-act="saveEv" data-id="${id}">Kaydet</button>${delBlock('delEv',id)}<button class="btn block" style="margin-top:10px" data-act="close">Kapat</button>`);
+  if(sl)sleepSum();
 }
 function openMed(id){
   const m=S.meds.find(x=>x.id===id)||{};sel={medId:id||''};
@@ -654,19 +679,22 @@ const H={
     if(el.dataset.g==='dk'){const r=$('#colorRow');r.hidden=!(sel.dk==='dirty'||sel.dk==='both');}},
   col(el){sel.col=sel.col===el.dataset.v?'':el.dataset.v;el.parentElement.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.v===sel.col));},
   ml(el){$('#f-ml').value=el.dataset.v;},
+  sleepSum(){sleepSum();},
   medName(el){$('#m-name').value=el.dataset.v;},
   qBreast:openBreast,qBottle:openBottle,qDiaper:openDiaper,qSleep:openSleep,
   startTimer(el){const k=el.dataset.k;S.timers[k]={start:Date.now()};if(k==='breast')S.timers[k].side=sel.side||'Sol';save();closeSheet();render();},
   stopTimer(el){const k=el.dataset.k,t=S.timers[k];if(!t)return;const e={id:uid(),type:k,t:t.start,dur:Date.now()-t.start};if(k==='breast')e.side=t.side;S.events.push(e);delete S.timers[k];save();render();flash('Kaydedildi');},
   cancelTimer(el){delete S.timers[el.dataset.k];save();render();},
   saveBreast(){const m=num($('#f-dur').value);if(!(m>0))return flash('Süreyi gir');const t=tAt('f-time','f-date');if(t===null)return;S.events.push({id:uid(),type:'breast',t,side:sel.side||'Sol',dur:m*60000});save();closeSheet();render();flash('Kaydedildi');},
-  saveSleep(){const m=num($('#f-dur').value);if(!(m>0))return flash('Süreyi gir');const t=tAt('f-time','f-date');if(t===null)return;S.events.push({id:uid(),type:'sleep',t,dur:m*60000});save();closeSheet();render();flash('Kaydedildi');},
+  saveSleep(){const r=sleepAt();if(!r)return;S.events.push({id:uid(),type:'sleep',t:r.t,dur:r.dur});save();closeSheet();render();flash('Kaydedildi');},
   saveBottle(){const ml=num($('#f-ml').value);if(!(ml>0))return flash('Miktarı gir');const t=tAt('f-time','f-date');if(t===null)return;S.events.push({id:uid(),type:'bottle',t,ml:Math.round(ml),kind:sel.bk||'Anne sütü'});save();closeSheet();render();flash('Kaydedildi');},
   saveDiaper(){if(!sel.dk)return flash('Islak mı kirli mi seç');const t=tAt('f-time','f-date');if(t===null)return;const e={id:uid(),type:'diaper',t,kind:sel.dk};if(sel.col&&sel.dk!=='wet')e.color=sel.col;S.events.push(e);save();closeSheet();render();flash('Kaydedildi');},
   openEv(el){openEv(el.dataset.id);},
   saveEv(el){
-    const e=S.events.find(x=>x.id===el.dataset.id);if(!e)return;const t=tAt('f-time','f-date');if(t===null)return;
-    if(e.type==='breast'||e.type==='sleep'){const m=num($('#f-dur').value);if(!(m>0))return flash('Süreyi gir');e.dur=m*60000;if(e.type==='breast')e.side=sel.side||'Sol';}
+    const e=S.events.find(x=>x.id===el.dataset.id);if(!e)return;
+    if(e.type==='sleep'){const r=sleepAt();if(!r)return;e.t=r.t;e.dur=r.dur;save();closeSheet();render();flash('Güncellendi');return;}
+    const t=tAt('f-time','f-date');if(t===null)return;
+    if(e.type==='breast'){const m=num($('#f-dur').value);if(!(m>0))return flash('Süreyi gir');e.dur=m*60000;e.side=sel.side||'Sol';}
     if(e.type==='bottle'){const ml=num($('#f-ml').value);if(!(ml>0))return flash('Miktarı gir');e.ml=Math.round(ml);e.kind=sel.bk||'Anne sütü';}
     if(e.type==='diaper'){if(!sel.dk)return flash('Islak mı kirli mi seç');e.kind=sel.dk;if(sel.col&&sel.dk!=='wet')e.color=sel.col;else delete e.color;}
     e.t=t;save();closeSheet();render();flash('Güncellendi');
