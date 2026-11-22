@@ -11,7 +11,7 @@ const FB={
   messagingSenderId:"386088030461",
   appId:"1:386088030461:web:563d1e025a90fe2aab6e94"
 };
-const VERSION='2.9',BUILD='22 Kasım 2026';
+const VERSION='3.0',BUILD='22 Kasım 2026';
 const FAM_KEY='bebektakip.family';
 const COLS=['events','meds','growth','vax','timers','meta','appts','notes','qs'];
 let S={baby:{name:'',birth:''},events:[],meds:[],vax:{},growth:[],timers:{},appts:[],notes:[],qs:[]};
@@ -622,15 +622,17 @@ function openNote(id){
 
 /* Sesler ve ninni: tarayıcıda üretilir (Web Audio), dosya ve internet gerekmez */
 const SND=[
+ {id:'shush',ic:'🤫',t:'Şşş sesi (sürekli)',k:'n'},
+ {id:'shushr',ic:'😮‍💨',t:'Şşş sesi (nefes gibi, ritimli)',k:'n'},
  {id:'white',ic:'🌫️',t:'Beyaz gürültü',k:'n'},
  {id:'pink',ic:'🌸',t:'Pembe gürültü (yumuşak)',k:'n'},
  {id:'brown',ic:'🌊',t:'Kahverengi gürültü (derin)',k:'n'},
- {id:'rain',ic:'🌧️',t:'Yağmur',k:'n'},
- {id:'fan',ic:'🌀',t:'Fan sesi',k:'n'},
- {id:'womb',ic:'🤰',t:'Rahim sesi (kalp atışı)',k:'n'},
- {id:'car',ic:'🚗',t:'Araç içi sesi',k:'n'},
+ {id:'womb',ic:'🤰',t:'Rahim sesi (hızlı bebek kalp atışı)',k:'n'},
+ {id:'heart',ic:'💓',t:'Anne kalp atışı (yavaş)',k:'n'},
+ {id:'ocean',ic:'🐚',t:'Dalga uğultusu (rahim sıvısı gibi)',k:'n'},
  {id:'brahms',ic:'🎵',t:'Brahms ninnisi (müzik kutusu, sözsüz)',k:'m'}
 ];
+const NOXF=['white','womb','heart','shushr','ocean'];
 const MEL={brahms:{bpm:66,n:[[64,.5],[64,.5],[67,2],[64,.5],[64,.5],[67,2],[64,.5],[67,.5],[72,1],[71,2],[69,.5],[69,.5],[67,2],[62,.5],[64,.5],[65,2],[62,.5],[62,.5],[64,.5],[65,.5],[62,.5],[65,.5],[71,1],[69,2],[67,.5],[71,.5],[72,3],[0,1.5]]}};
 let AC=null,SEL=null,sndFd=null,sndId='',sndVol=30,sndMin=30,sndTm=null,sndAt=0;const sndBuf={};
 function sndMake(id){
@@ -649,36 +651,36 @@ function sndMake(id){
   if(id==='white'){for(let i=0;i<N;i++)d[i]=rnd()*0.5;}
   else if(id==='pink'){let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0;for(let i=0;i<N;i++){const w=rnd();b0=.99886*b0+w*.0555179;b1=.99332*b1+w*.0750759;b2=.969*b2+w*.153852;b3=.8665*b3+w*.3104856;b4=.55*b4+w*.5329522;b5=-.7616*b5-w*.016898;d[i]=(b0+b1+b2+b3+b4+b5+b6+w*.5362)*0.11;b6=w*.115926;}}
   else if(id==='brown'){let last=0;for(let i=0;i<N;i++){last=(last+0.02*rnd())/1.02;d[i]=last*3.2;}}
-  else if(id==='rain'){
-    /* zemin: 700 Hz-7 kHz arası hışırtı + sık, rastgele küçük damlalar + uzaktan hafif gürültü */
-    const l1=LP(4500),l1b=LP(4500),l2=LP(900),l2b=LP(900),l3=LP(250);
-    for(let i=0;i<N;i++){const w=rnd();const hi=l1b(l1(w))-l2b(l2(w));d[i]=hi*0.9+l3(w)*0.35;}
-    const nd=Math.floor(N/sr*55);
-    for(let k=0;k<nd;k++){const i0=Math.floor(Math.random()*N),len=Math.floor(sr*(0.004+Math.random()*0.012)),a=(0.15+Math.random()*0.5)*(Math.random()<0.15?1.6:1),f=1200+Math.random()*2800,tone=Math.random()<0.4;
-      for(let i=0;i<len;i++){const x=i/len,e=Math.exp(-x*6)*a,v=tone?Math.sin(TP*f*i/sr):rnd();d[(i0+i)%N]+=v*e*0.5;}}
+  else if(id==='shush'||id==='shushr'){
+    /* "şşş": 1,5-6,5 kHz arası hışırtı (insanın şşş sesine yakın), ritimli olanda nefes gibi iniş çıkış */
+    const h1=LP(1500),h2=LP(1500),t1=LP(6000),t2=LP(6000),m1=LP(300);const per=2.0;
+    for(let i=0;i<N;i++){const t=i/sr,w=rnd();let v=(t2(t1(w))-h2(h1(w)))*1.6+m1(rnd())*0.1;
+      if(id==='shushr'){const ph=(t%per)/per,e=0.12+0.88*Math.pow(Math.sin(Math.PI*ph),1.6);v*=e;}
+      d[i]=v;}
   }
-  else if(id==='fan'){
-    /* motor + kanat sesi: sabit tonlar ve hafif dönüş titreşimi, üstüne yumuşak hava sesi */
-    const l1=LP(1500),l2=LP(1500),l4=LP(200);
-    for(let i=0;i<N;i++){const t=i/sr,am=1+0.12*Math.sin(TP*3*t);
-      d[i]=(l2(l1(rnd()))*1.8+l4(rnd())*1.5)*am+(0.10*Math.sin(TP*60*t)+0.14*Math.sin(TP*120*t)+0.07*Math.sin(TP*240*t)+0.04*Math.sin(TP*360*t))*am;}
+  else if(id==='heart'){
+    /* anne kalp atışı: dakikada 75, yumuşak "lub-dub", çok hafif arka plan uğultusu */
+    const l1=LP(200),per=0.8;
+    for(let i=0;i<N;i++){const t=i/sr,ph=t%per;
+      const th=(Math.sin(TP*95*ph)+0.5*Math.sin(TP*190*ph))*Math.exp(-ph*20)*0.9+(ph>0.27?(Math.sin(TP*82*(ph-0.27))+0.5*Math.sin(TP*164*(ph-0.27)))*Math.exp(-(ph-0.27)*24)*0.55:0);
+      d[i]=th+l1(rnd())*0.25;}
   }
-  else if(id==='car'){
-    /* araç içi: derin motor uğultusu + yol ve rüzgâr gürültüsü */
-    const a1=LP(180),a2=LP(180),r1=LP(1600),r2=LP(1600);
-    for(let i=0;i<N;i++){const t=i/sr,w=rnd(),wob=1+0.15*Math.sin(TP*0.5*t)+0.06*Math.sin(TP*1.25*t);
-      d[i]=(a2(a1(w))*7*wob)+r2(r1(rnd()))*1.1+(0.07*Math.sin(TP*38*t)+0.045*Math.sin(TP*76*t+1)+0.025*Math.sin(TP*114*t+2))*wob;}
+  else if(id==='ocean'){
+    /* yavaş dalgalar: 4 sn'lik dalga, yükselirken sesin tizliği artar */
+    const a1=LP(350),a2=LP(350),b1=LP(2200),b2=LP(2200);
+    for(let i=0;i<N;i++){const t=i/sr,x=(1+Math.sin(TP*t/4-1.2))/2,e=0.18+0.82*x*x;const w=rnd(),lo=a2(a1(w))*5,hi=b2(b1(rnd()))*1.6;
+      d[i]=lo*(0.35+0.65*e)+hi*e*e;}
   }
   else if(id==='womb'){
     /* rahim: boğuk, yavaşça dalgalanan kan akışı uğultusu + belirgin bebek kalp atışı (dakikada 150) */
-    const l1=LP(220),l2=LP(220),l3=LP(90);const per=0.4;
+    const l1=LP(350),l2=LP(350),l3=LP(160);const per=0.4;
     for(let i=0;i<N;i++){const t=i/sr,ph=t%per,w=rnd();
       const flow=1+0.35*Math.sin(TP*0.5*t)+0.2*Math.sin(TP*1.25*t+1);
       let v=l2(l1(w))*5.5*flow+l3(rnd())*2.5;
-      const th=(Math.sin(TP*70*ph)*Math.exp(-ph*38))*0.9+(ph>0.11?Math.sin(TP*58*(ph-0.11))*Math.exp(-(ph-0.11)*45)*0.65:0);
+      const th=((Math.sin(TP*100*ph)+0.5*Math.sin(TP*200*ph))*Math.exp(-ph*38))*0.9+(ph>0.11?(Math.sin(TP*85*(ph-0.11))+0.5*Math.sin(TP*170*(ph-0.11)))*Math.exp(-(ph-0.11)*45)*0.65:0);
       d[i]=v*0.55+th*0.9;}
   }
-  if(id!=='womb'&&id!=='white'){const M=Math.floor(sr*0.15);for(let i=0;i<M;i++){const a=i/M;d[N-M+i]=d[N-M+i]*(1-a)+d[i]*a;}}
+  if(!NOXF.includes(id)){const M=Math.floor(sr*0.15);for(let i=0;i<M;i++){const a=i/M;d[N-M+i]=d[N-M+i]*(1-a)+d[i]*a;}}
   {let r=0,pk=0;for(let i=0;i<N;i++){r+=d[i]*d[i];const x=Math.abs(d[i]);if(x>pk)pk=x;}r=Math.sqrt(r/N)||1;let g=0.17/r;if(pk*g>0.9)g=0.9/pk;for(let i=0;i<N;i++)d[i]*=g;}
   return b;
 }
@@ -698,7 +700,7 @@ function sndStart(id){
   if(!sndUrl[id]){
     if(!AC)AC=new C();
     const m0=SND.find(x=>x.id===id),b=sndMake(id);
-    sndUrl[id]=URL.createObjectURL(sndWav(b,(m0.k!=='m'&&id!=='womb'&&id!=='white')?Math.floor(b.sampleRate*0.15):0));
+    sndUrl[id]=URL.createObjectURL(sndWav(b,(m0.k!=='m'&&!NOXF.includes(id))?Math.floor(b.sampleRate*0.15):0));
   }
   const m=SND.find(x=>x.id===id);
   SEL=new Audio(sndUrl[id]);SEL.loop=true;SEL.volume=sndVolOf(sndVol);
@@ -714,11 +716,12 @@ function sndSetTimer(){
   sndTm=setTimeout(()=>{let k=0;const v0=SEL?SEL.volume:0;clearInterval(sndFd);sndFd=setInterval(()=>{k++;if(SEL)SEL.volume=Math.max(0,v0*(1-k/16));if(k>=16){sndStop();if(tab==='info')render();}},500);},sndMin*60000);
 }
 function vSnd(){
-  let h=`<div class="card hint"><p style="margin:0">Sesi kısık tut, telefonu bebeğin başından uzağa koy ve uzun süre yüksek sesle dinletme.</p></div>`;
+  let h=`<div class="card hint"><p style="margin:0"><b>Güvenli kullanım:</b> Sesi kısık tut, telefonu bebeğin başından en az 1-2 metre uzağa koy ve bebek uyuyunca kapat. Araştırmalarda bebek ses makinelerinin yüksek sesle çalınınca işitmeye zarar verebileceği görüldü.</p></div>`;
   SND.forEach(x=>{const on=sndId===x.id;h+=`<button class="item" data-act="sndPlay" data-id="${x.id}" style="${on?'border:2px solid var(--pri)':''}"><span class="ic">${x.ic}</span><span class="tx">${esc(x.t)}<small>${on?'Çalıyor · durdurmak için dokun':'Başlatmak için dokun'}</small></span><span style="font-size:22px">${on?'⏸':'▶'}</span></button>`;});
   h+=`<label style="margin-top:12px">Ses düzeyi</label><input type="range" min="5" max="100" value="${sndVol}" data-inp="sndVol" style="width:100%">`;
   h+=`<label style="margin-top:12px">Kendiliğinden kapanma</label><div class="chips">${[[0,'Kapalı'],[15,'15 dk'],[30,'30 dk'],[60,'1 saat']].map(([m,l])=>`<button class="${sndMin===m?'on':''}" data-act="sndTimer" data-v="${m}">${l}</button>`).join('')}</div>`;
   if(sndId&&sndAt)h+=`<div class="mute" style="margin-top:8px">Kapanış: ${hm(sndAt)}</div>`;
+  h+=`<div class="mute" style="margin-top:14px;font-size:13px;line-height:1.5">Bilimsel not: En çok kanıt yenidoğanda şşş benzeri sürekli gürültü içindir (küçük bir çalışmada 5 dakikada uyuma oranı arttı). Kundak ve sallamayla birlikte kullanılınca daha iyi sonuç verdi. Sesin bebeği bütün gece uyutacağına dair kanıt zayıf. Ninni ve şarkıda en iyi sonuç ebeveynin kendi sesiyle alındı.</div>`;
   return h;
 }
 const INFO=[
@@ -726,7 +729,7 @@ const INFO=[
  {id:'appt',ic:'🩺',t:'Muayene randevuları',sub:()=>{const n=S.appts.filter(a=>a.t>=Date.now()-36e5).sort((a,b)=>a.t-b.t)[0];return n?'Sıradaki: '+fmtShort(n.t)+' '+hm(n.t):'Randevu ekle, takvime aktar';},body:vAppt},
  {id:'qs',ic:'❓',t:'Doktora sorulacaklar',sub:()=>{const n=S.qs.filter(q=>!q.done).length;return n?n+' bekleyen soru':'Aklına gelenleri yaz'},body:()=>vQs()},
  {id:'notes',ic:'📝',t:'Doktor notları',sub:()=>S.notes.length?S.notes.length+' not':'Doktorun tavsiyeleri',body:vNotes},
- {id:'snd',ic:'🎶',t:'Sesler ve ninniler',sub:()=>sndId?'Çalıyor: '+SND.find(x=>x.id===sndId).t:'Beyaz gürültü, yağmur, ninni',body:()=>vSnd()},
+ {id:'snd',ic:'🎶',t:'Sesler ve ninniler',sub:()=>sndId?'Çalıyor: '+SND.find(x=>x.id===sndId).t:'Şşş, beyaz gürültü, kalp atışı, ninni',body:()=>vSnd()},
  {id:'miles',ic:'🧸',t:'Bebekler bunları ne zaman yapar?',sub:'Gelişim basamakları, ay ay',body:bodyMiles}
 ];
 function vInfo(){
