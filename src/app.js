@@ -11,7 +11,7 @@ const FB={
   messagingSenderId:"386088030461",
   appId:"1:386088030461:web:563d1e025a90fe2aab6e94"
 };
-const VERSION='2.1',BUILD='17 Kasım 2026';
+const VERSION='2.2',BUILD='22 Kasım 2026';
 const FAM_KEY='bebektakip.family';
 const COLS=['events','meds','growth','vax','timers','meta','appts','notes','qs'];
 let S={baby:{name:'',birth:''},events:[],meds:[],vax:{},growth:[],timers:{},appts:[],notes:[],qs:[]};
@@ -147,6 +147,8 @@ const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;'
 const hm=t=>{const d=new Date(t);return pad(d.getHours())+':'+pad(d.getMinutes());};
 const dayKey=t=>{const d=new Date(t);return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());};
 const todayStr=()=>dayKey(Date.now());
+/* uyku, uyanılan güne yazılır (dün 23:00 → bugün 07:00 uykusu bugünün kaydıdır) */
+const eT=e=>e.type==='sleep'?e.t+(e.dur||0):e.t;
 const ago=ms=>{const m=Math.floor(ms/60000);if(m<1)return 'şimdi';if(m<60)return m+' dk önce';const h=Math.floor(m/60),r=m%60;if(h<24)return h+' sa'+(r?' '+r+' dk':'')+' önce';return Math.floor(h/24)+' gün önce';};
 const dur=ms=>{const m=Math.max(1,Math.round(ms/60000));return m<60?m+' dk':Math.floor(m/60)+' sa'+(m%60?' '+(m%60)+' dk':'');};
 const mmss=ms=>{const s=Math.max(0,Math.floor(ms/1000)),h=Math.floor(s/3600),m=Math.floor(s%3600/60);return (h?h+':'+pad(m):m)+':'+pad(s%60);};
@@ -316,8 +318,8 @@ function saveICS(name,evs){
 let avgN=7;
 function avgStats(n){
   const tk=todayStr(),t0=parseDate(tk),start=new Date(t0.getFullYear(),t0.getMonth(),t0.getDate()-n);
-  const evs=S.events.filter(e=>e.type!=='med'&&e.t>=start&&e.t<t0);
-  const days=new Set(evs.filter(e=>e.type!=='temp').map(e=>dayKey(e.t))).size;
+  const evs=S.events.filter(e=>e.type!=='med'&&eT(e)>=start&&eT(e)<t0);
+  const days=new Set(evs.filter(e=>e.type!=='temp').map(e=>dayKey(eT(e)))).size;
   const bo=evs.filter(e=>e.type==='bottle'||e.type==='breast'),di=evs.filter(e=>e.type==='diaper'),sl=evs.filter(e=>e.type==='sleep'),pu=evs.filter(e=>e.type==='pump'),te=evs.filter(e=>e.type==='temp');
   const sum=(a,k)=>a.reduce((x,e)=>x+(e[k]||0),0);
   const fe=bo.map(e=>e.t).sort((a,b)=>a-b);
@@ -347,7 +349,7 @@ function avgCard(){
 function vToday(){
   const now=Date.now(),tk=todayStr();
   const all=[...S.events].sort((a,b)=>b.t-a.t);
-  const vd=vday(),isT=vd===tk,today=all.filter(e=>dayKey(e.t)===vd);
+  const vd=vday(),isT=vd===tk,today=all.filter(e=>dayKey(eT(e))===vd);
   let h='';
   if(!S.baby.birth)h+=`<div class="card hint"><b>Başlayalım</b><p>Bebeğin adını ve doğum tarihini gir. Aşı takvimi buna göre hesaplanır.</p><button class="btn pri" data-act="gear">Bilgileri gir</button></div>`;
   for(const a of alertList())h+=`<button class="item" data-act="${a.act||'tab'}" data-v="${a.tab}"${a.topic?` data-topic="${a.topic}"`:''} style="border-color:var(--${a.cls==='bad'?'bad':'warn'})"><span class="ic">${a.ic}</span><span class="tx">${esc(a.t)}</span><span class="tag ${a.cls}">${esc(a.tag)}</span></button>`;
