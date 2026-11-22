@@ -33,13 +33,13 @@ h2{font-size:15px;color:var(--mute);margin:20px 4px 8px;font-weight:600;letter-s
 .qgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
 .q{height:92px;border-radius:18px;border:1px solid var(--line);background:var(--card);font-size:16px;font-weight:600;color:var(--ink);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
 .q span{font-size:30px;line-height:1}
-.q.feed{background:color-mix(in srgb,var(--feed) 16%,var(--card))}
-.q.bottle{background:color-mix(in srgb,var(--feed) 9%,var(--card))}
-.q.diaper{background:color-mix(in srgb,var(--diaper) 15%,var(--card))}
-.q.sleep{background:color-mix(in srgb,var(--sleep) 15%,var(--card))}
+.q.feed{background:color-mix(in srgb,var(--feed) 26%,var(--card));border-color:color-mix(in srgb,var(--feed) 60%,var(--card));border-width:2px}
+.q.bottle{background:color-mix(in srgb,var(--feed) 26%,var(--card));border-color:color-mix(in srgb,var(--feed) 60%,var(--card));border-width:2px}
+.q.diaper{background:color-mix(in srgb,var(--diaper) 26%,var(--card));border-color:color-mix(in srgb,var(--diaper) 60%,var(--card));border-width:2px}
+.q.sleep{background:color-mix(in srgb,var(--sleep) 26%,var(--card));border-color:color-mix(in srgb,var(--sleep) 60%,var(--card));border-width:2px}
 .q.pump,.q.temp{height:64px;flex-direction:row;gap:8px}.q.pump span,.q.temp span{font-size:24px}
 .q.pump{background:color-mix(in srgb,var(--pri) 10%,var(--card))}
-.q.temp{background:color-mix(in srgb,var(--med) 12%,var(--card))}
+.q.temp{background:color-mix(in srgb,var(--bad,#d9566a) 24%,var(--card));border-color:color-mix(in srgb,var(--bad,#d9566a) 60%,var(--card));border-width:2px}
 button.check{background:none;padding:0;color:inherit}
 .q:active{transform:scale(.97)}
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
