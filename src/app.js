@@ -11,7 +11,7 @@ const FB={
   messagingSenderId:"386088030461",
   appId:"1:386088030461:web:563d1e025a90fe2aab6e94"
 };
-const VERSION='2.7',BUILD='22 Kasım 2026';
+const VERSION='2.8',BUILD='22 Kasım 2026';
 const FAM_KEY='bebektakip.family';
 const COLS=['events','meds','growth','vax','timers','meta','appts','notes','qs'];
 let S={baby:{name:'',birth:''},events:[],meds:[],vax:{},growth:[],timers:{},appts:[],notes:[],qs:[]};
@@ -628,6 +628,7 @@ const SND=[
  {id:'rain',ic:'🌧️',t:'Yağmur',k:'n'},
  {id:'fan',ic:'🌀',t:'Fan sesi',k:'n'},
  {id:'womb',ic:'🤰',t:'Rahim sesi (kalp atışı)',k:'n'},
+ {id:'car',ic:'🚗',t:'Araç içi sesi',k:'n'},
  {id:'brahms',ic:'🎵',t:'Brahms ninnisi (müzik kutusu, sözsüz)',k:'m'}
 ];
 const MEL={brahms:{bpm:66,n:[[64,.5],[64,.5],[67,2],[64,.5],[64,.5],[67,2],[64,.5],[67,.5],[72,1],[71,2],[69,.5],[69,.5],[67,2],[62,.5],[64,.5],[65,2],[62,.5],[62,.5],[64,.5],[65,.5],[62,.5],[65,.5],[71,1],[69,2],[67,.5],[71,.5],[72,3],[0,1.5]]}};
@@ -643,17 +644,43 @@ function sndMake(id){
     return b;
   }
   N=Math.floor(sr*8);const b=AC.createBuffer(1,N,sr);d=b.getChannelData(0);
-  let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0,last=0,lp=0,lp2=0;
-  for(let i=0;i<N;i++){const w=Math.random()*2-1,t=i/sr;
-    if(id==='white')d[i]=w*0.5;
-    else if(id==='pink'){b0=.99886*b0+w*.0555179;b1=.99332*b1+w*.0750759;b2=.969*b2+w*.153852;b3=.8665*b3+w*.3104856;b4=.55*b4+w*.5329522;b5=-.7616*b5-w*.016898;d[i]=(b0+b1+b2+b3+b4+b5+b6+w*.5362)*0.11;b6=w*.115926;}
-    else if(id==='brown'){last=(last+0.02*w)/1.02;d[i]=last*3.2;}
-    else if(id==='rain'){lp+=0.35*(w-lp);d[i]=(w-lp)*0.55*(0.85+0.15*Math.sin(6.2832*t/8*3));}
-    else if(id==='fan'){lp+=0.06*(w-lp);lp2+=0.5*(lp-lp2);d[i]=lp2*1.6+0.07*Math.sin(6.2832*100*t)+0.03*Math.sin(6.2832*200*t);}
-    else if(id==='womb'){lp+=0.012*(w-lp);lp2+=0.2*(lp-lp2);let v=lp2*7;const ph=t%0.8;
-      v+=0.55*Math.sin(6.2832*55*ph)*Math.exp(-ph*16)+(ph>0.24?0.38*Math.sin(6.2832*48*(ph-0.24))*Math.exp(-(ph-0.24)*18):0);d[i]=v*0.55;}
+  const TP=6.2832,rnd=()=>Math.random()*2-1,fc=f=>1-Math.exp(-TP*f/sr);
+  /* tek kutuplu alçak geçiren süzgeç */
+  const LP=f=>{const c=fc(f);let y=0;return x=>(y+=c*(x-y));};
+  if(id==='white'){for(let i=0;i<N;i++)d[i]=rnd()*0.5;}
+  else if(id==='pink'){let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0;for(let i=0;i<N;i++){const w=rnd();b0=.99886*b0+w*.0555179;b1=.99332*b1+w*.0750759;b2=.969*b2+w*.153852;b3=.8665*b3+w*.3104856;b4=.55*b4+w*.5329522;b5=-.7616*b5-w*.016898;d[i]=(b0+b1+b2+b3+b4+b5+b6+w*.5362)*0.11;b6=w*.115926;}}
+  else if(id==='brown'){let last=0;for(let i=0;i<N;i++){last=(last+0.02*rnd())/1.02;d[i]=last*3.2;}}
+  else if(id==='rain'){
+    /* zemin: 700 Hz-7 kHz arası hışırtı + sık, rastgele küçük damlalar + uzaktan hafif gürültü */
+    const l1=LP(4500),l1b=LP(4500),l2=LP(900),l2b=LP(900),l3=LP(250);
+    for(let i=0;i<N;i++){const w=rnd();const hi=l1b(l1(w))-l2b(l2(w));d[i]=hi*0.9+l3(w)*0.35;}
+    const nd=Math.floor(N/sr*55);
+    for(let k=0;k<nd;k++){const i0=Math.floor(Math.random()*N),len=Math.floor(sr*(0.004+Math.random()*0.012)),a=(0.15+Math.random()*0.5)*(Math.random()<0.15?1.6:1),f=1200+Math.random()*2800,tone=Math.random()<0.4;
+      for(let i=0;i<len;i++){const x=i/len,e=Math.exp(-x*6)*a,v=tone?Math.sin(TP*f*i/sr):rnd();d[(i0+i)%N]+=v*e*0.5;}}
   }
-  if(id!=='womb'&&id!=='white'&&id!=='rain'){const M=Math.floor(sr*0.15);for(let i=0;i<M;i++){const a=i/M;d[N-M+i]=d[N-M+i]*(1-a)+d[i]*a;}}
+  else if(id==='fan'){
+    /* motor + kanat sesi: sabit tonlar ve hafif dönüş titreşimi, üstüne yumuşak hava sesi */
+    const l1=LP(1500),l2=LP(1500),l4=LP(200);
+    for(let i=0;i<N;i++){const t=i/sr,am=1+0.12*Math.sin(TP*3*t);
+      d[i]=(l2(l1(rnd()))*1.8+l4(rnd())*1.5)*am+(0.10*Math.sin(TP*60*t)+0.14*Math.sin(TP*120*t)+0.07*Math.sin(TP*240*t)+0.04*Math.sin(TP*360*t))*am;}
+  }
+  else if(id==='car'){
+    /* araç içi: derin motor uğultusu + yol ve rüzgâr gürültüsü */
+    const a1=LP(180),a2=LP(180),r1=LP(1600),r2=LP(1600);
+    for(let i=0;i<N;i++){const t=i/sr,w=rnd(),wob=1+0.15*Math.sin(TP*0.5*t)+0.06*Math.sin(TP*1.25*t);
+      d[i]=(a2(a1(w))*7*wob)+r2(r1(rnd()))*1.1+(0.07*Math.sin(TP*38*t)+0.045*Math.sin(TP*76*t+1)+0.025*Math.sin(TP*114*t+2))*wob;}
+  }
+  else if(id==='womb'){
+    /* rahim: boğuk, yavaşça dalgalanan kan akışı uğultusu + belirgin bebek kalp atışı (dakikada 150) */
+    const l1=LP(220),l2=LP(220),l3=LP(90);const per=0.4;
+    for(let i=0;i<N;i++){const t=i/sr,ph=t%per,w=rnd();
+      const flow=1+0.35*Math.sin(TP*0.5*t)+0.2*Math.sin(TP*1.25*t+1);
+      let v=l2(l1(w))*5.5*flow+l3(rnd())*2.5;
+      const th=(Math.sin(TP*70*ph)*Math.exp(-ph*38))*0.9+(ph>0.11?Math.sin(TP*58*(ph-0.11))*Math.exp(-(ph-0.11)*45)*0.65:0);
+      d[i]=v*0.55+th*0.9;}
+  }
+  if(id!=='womb'&&id!=='white'){const M=Math.floor(sr*0.15);for(let i=0;i<M;i++){const a=i/M;d[N-M+i]=d[N-M+i]*(1-a)+d[i]*a;}}
+  {let r=0,pk=0;for(let i=0;i<N;i++){r+=d[i]*d[i];const x=Math.abs(d[i]);if(x>pk)pk=x;}r=Math.sqrt(r/N)||1;let g=0.17/r;if(pk*g>0.9)g=0.9/pk;for(let i=0;i<N;i++)d[i]*=g;}
   return b;
 }
 function sndStart(id){
@@ -663,7 +690,7 @@ function sndStart(id){
   if(!sndBuf[id])sndBuf[id]=sndMake(id);
   SG=AC.createGain();SG.gain.value=sndGain(sndVol);
   SRC=AC.createBufferSource();SRC.buffer=sndBuf[id];SRC.loop=true;
-  const m=SND.find(x=>x.id===id);if(m.k!=='m'&&id!=='womb'&&id!=='white'&&id!=='rain')SRC.loopStart=0.15;
+  const m=SND.find(x=>x.id===id);if(m.k!=='m'&&id!=='womb'&&id!=='white')SRC.loopStart=0.15;
   SRC.connect(SG);
   try{const dst=AC.createMediaStreamDestination();SG.connect(dst);SEL=new Audio();SEL.srcObject=dst.stream;SEL.play().catch(()=>{try{SG.connect(AC.destination);}catch(e){}});}catch(e){SEL=null;SG.connect(AC.destination);}
   SRC.start();sndId=id;sndSetTimer();
