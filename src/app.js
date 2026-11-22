@@ -11,7 +11,7 @@ const FB={
   messagingSenderId:"386088030461",
   appId:"1:386088030461:web:563d1e025a90fe2aab6e94"
 };
-const VERSION='2.2',BUILD='22 Kasım 2026';
+const VERSION='2.3',BUILD='22 Kasım 2026';
 const FAM_KEY='bebektakip.family';
 const COLS=['events','meds','growth','vax','timers','meta','appts','notes','qs'];
 let S={baby:{name:'',birth:''},events:[],meds:[],vax:{},growth:[],timers:{},appts:[],notes:[],qs:[]};
@@ -1044,7 +1044,7 @@ document.addEventListener('change',e=>{const el=e.target.closest&&e.target.close
 
 /* ---------- başlat ---------- */
 (function boot(){
-  applyTheme();matchMedia('(prefers-color-scheme: dark)').addEventListener&&matchMedia('(prefers-color-scheme: dark)').addEventListener('change',applyTheme);
+  applyTheme();matchMedia('(prefers-color-scheme: dark)').addEventListener&&matchMedia('(prefers-color-scheme: dark)').addEventListener('change',applyTheme);document.addEventListener('visibilitychange',()=>{if(!document.hidden)applyTheme();});window.addEventListener('pageshow',applyTheme);
   const m=location.hash.match(/^#f=([a-z0-9-]+)/i),h=m?cleanCode(m[1]):'';
   if(h.length>=20&&!getFamily())setFamily(h);
   if(m)history.replaceState(null,'',location.pathname+location.search);
