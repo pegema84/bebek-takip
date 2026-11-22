@@ -11,7 +11,7 @@ const FB={
   messagingSenderId:"386088030461",
   appId:"1:386088030461:web:563d1e025a90fe2aab6e94"
 };
-const VERSION='2.3',BUILD='22 Kasım 2026';
+const VERSION='2.4',BUILD='22 Kasım 2026';
 const FAM_KEY='bebektakip.family';
 const COLS=['events','meds','growth','vax','timers','meta','appts','notes','qs'];
 let S={baby:{name:'',birth:''},events:[],meds:[],vax:{},growth:[],timers:{},appts:[],notes:[],qs:[]};
@@ -620,8 +620,9 @@ function openNote(id){
   ${id?delBlock('delNote',id):''}`);
 }
 const INFO=[
- {id:'doc',ic:'📋',t:'Doktor için özet',sub:()=>{const n=S.qs.filter(q=>!q.done).length;return 'Ortalamalar, ölçümler'+(n?' · '+n+' soru':', sorulacaklar');},body:()=>vDoc()},
+ {id:'doc',ic:'📋',t:'Doktor için özet',sub:()=>{return 'Ortalamalar, ölçümler, ateş, aşılar';},body:()=>vDoc()},
  {id:'appt',ic:'🩺',t:'Muayene randevuları',sub:()=>{const n=S.appts.filter(a=>a.t>=Date.now()-36e5).sort((a,b)=>a.t-b.t)[0];return n?'Sıradaki: '+fmtShort(n.t)+' '+hm(n.t):'Randevu ekle, takvime aktar';},body:vAppt},
+ {id:'qs',ic:'❓',t:'Doktora sorulacaklar',sub:()=>{const n=S.qs.filter(q=>!q.done).length;return n?n+' bekleyen soru':'Aklına gelenleri yaz'},body:()=>vQs()},
  {id:'notes',ic:'📝',t:'Doktor notları',sub:()=>S.notes.length?S.notes.length+' not':'Doktorun tavsiyeleri',body:vNotes},
  {id:'miles',ic:'🧸',t:'Bebekler bunları ne zaman yapar?',sub:'Gelişim basamakları, ay ay',body:bodyMiles}
 ];
@@ -730,13 +731,19 @@ function docText(){
   if(open.length)t+='\nDOKTORA SORULACAKLAR\n'+open.map(q=>'- '+q.text).join('\n')+'\n';
   return t;
 }
+function vQs(){
+  let h=`<div class="row" style="gap:8px;margin-bottom:8px"><input type="text" id="q-text" placeholder="Aklına gelen soruyu yaz" style="flex:1"><button class="btn pri" data-act="qAdd">Ekle</button></div>`;
+  const qs=[...S.qs].sort((a,b)=>(a.done-b.done)||(a.c-b.c));
+  if(!qs.length)h+=`<div class="card mute">Soru yok. Aklına geldikçe ekle, muayenede buradan bakıp sorulanları işaretlersin.</div>`;
+  qs.forEach(q=>{h+=`<div class="item"><button class="check ${q.done?'on':''}" data-act="qToggle" data-id="${q.id}" aria-label="Soruldu">${q.done?'✓':''}</button><span class="tx" style="${q.done?'text-decoration:line-through;color:var(--mute)':''}">${esc(q.text)}</span><button class="btn sm ghost" data-act="qDel" data-id="${q.id}" aria-label="Sil">✕</button></div>`;});
+  return h;
+}
 function vDoc(){
   const {d,sec}=docSections();
   let h='';
   if(d.appt)h+=`<div class="card hint"><b>Sıradaki randevu</b><p style="margin-bottom:0">${esc(d.appt.title||'Muayene')} · ${esc(dtLong(d.appt.t))} ${hm(d.appt.t)}${d.appt.place?' · '+esc(d.appt.place):''}</p></div>`;
-  h+=`<h2>❓ Doktora sorulacaklar</h2><div class="row" style="gap:8px;margin-bottom:8px"><input type="text" id="q-text" placeholder="Aklına gelen soruyu yaz" style="flex:1"><button class="btn pri" data-act="qAdd">Ekle</button></div>`;
-  if(!d.qs.length)h+=`<div class="card mute">Soru yok. Aklına geldikçe ekle, muayenede buradan bakarsın.</div>`;
-  d.qs.forEach(q=>{h+=`<div class="item"><button class="check ${q.done?'on':''}" data-act="qToggle" data-id="${q.id}" aria-label="Soruldu">${q.done?'✓':''}</button><span class="tx" style="${q.done?'text-decoration:line-through;color:var(--mute)':''}">${esc(q.text)}</span><button class="btn sm ghost" data-act="qDel" data-id="${q.id}" aria-label="Sil">✕</button></div>`;});
+  const pend=d.qs.filter(q=>!q.done);
+  h+=`<h2>❓ Doktora sorulacaklar</h2>`+(pend.length?`<div class="card" style="line-height:1.55">${pend.map(q=>`<div>• ${esc(q.text)}</div>`).join('')}</div>`:`<div class="card mute">Bekleyen soru yok.</div>`)+`<button class="btn block ghost" data-act="infoOpen" data-id="qs" style="margin-bottom:12px">Soruları düzenle</button>`;
   sec.forEach(([t,l])=>{h+=`<h2>${esc(t)}</h2><div class="card" style="line-height:1.55">${l.map(x=>`<div>${esc(x)}</div>`).join('')}</div>`;});
   h+=`<button class="btn block" data-act="docCopy">📋 Özeti metin olarak kopyala</button><div class="foot">Ortalamalar bugünü içermez ve yalnızca kayıt girilen günlerden hesaplanır.</div>`;
   return h;
