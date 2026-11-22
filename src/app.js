@@ -11,7 +11,7 @@ const FB={
   messagingSenderId:"386088030461",
   appId:"1:386088030461:web:563d1e025a90fe2aab6e94"
 };
-const VERSION='3.0',BUILD='22 Kasım 2026';
+const VERSION='3.1',BUILD='22 Kasım 2026';
 const FAM_KEY='bebektakip.family';
 const COLS=['events','meds','growth','vax','timers','meta','appts','notes','qs'];
 let S={baby:{name:'',birth:''},events:[],meds:[],vax:{},growth:[],timers:{},appts:[],notes:[],qs:[]};
@@ -847,9 +847,6 @@ function vQs(){
 function vDoc(){
   const {d,sec}=docSections();
   let h='';
-  if(d.appt)h+=`<div class="card hint"><b>Sıradaki randevu</b><p style="margin-bottom:0">${esc(d.appt.title||'Muayene')} · ${esc(dtLong(d.appt.t))} ${hm(d.appt.t)}${d.appt.place?' · '+esc(d.appt.place):''}</p></div>`;
-  const pend=d.qs.filter(q=>!q.done);
-  h+=`<h2>❓ Doktora sorulacaklar</h2>`+(pend.length?`<div class="card" style="line-height:1.55">${pend.map(q=>`<div>• ${esc(q.text)}</div>`).join('')}</div>`:`<div class="card mute">Bekleyen soru yok.</div>`)+`<button class="btn block ghost" data-act="infoOpen" data-id="qs" style="margin-bottom:12px">Soruları düzenle</button>`;
   sec.forEach(([t,l])=>{h+=`<h2>${esc(t)}</h2><div class="card" style="line-height:1.55">${l.map(x=>`<div>${esc(x)}</div>`).join('')}</div>`;});
   h+=`<button class="btn block" data-act="docCopy">📋 Özeti metin olarak kopyala</button><div class="foot">Ortalamalar bugünü içermez ve yalnızca kayıt girilen günlerden hesaplanır.</div>`;
   return h;
