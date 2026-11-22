@@ -11,7 +11,7 @@ const FB={
   messagingSenderId:"386088030461",
   appId:"1:386088030461:web:563d1e025a90fe2aab6e94"
 };
-const VERSION='3.1',BUILD='22 Kasım 2026';
+const VERSION='3.3',BUILD='22 Kasım 2026';
 const FAM_KEY='bebektakip.family';
 const COLS=['events','meds','growth','vax','timers','meta','appts','notes','qs'];
 let S={baby:{name:'',birth:''},events:[],meds:[],vax:{},growth:[],timers:{},appts:[],notes:[],qs:[]};
@@ -724,9 +724,35 @@ function vSnd(){
   h+=`<div class="mute" style="margin-top:14px;font-size:13px;line-height:1.5">Bilimsel not: En çok kanıt yenidoğanda şşş benzeri sürekli gürültü içindir (küçük bir çalışmada 5 dakikada uyuma oranı arttı). Kundak ve sallamayla birlikte kullanılınca daha iyi sonuç verdi. Sesin bebeği bütün gece uyutacağına dair kanıt zayıf. Ninni ve şarkıda en iyi sonuç ebeveynin kendi sesiyle alındı.</div>`;
   return h;
 }
+
+/* Mama miktarı rehberi: AAP/HealthyChildren ve NHS kaynaklı ortalamalar */
+const FEEDROWS=[
+ ['İlk 1-2 gün',0,2,'yaklaşık 15','istediği kadar','—'],
+ ['1. hafta',3,7,'30-60','8-12','300-600'],
+ ['2-3. hafta',8,27,'60-90','7-8','450-700'],
+ ['1 ay',28,59,'90-120','6-8','600-900'],
+ ['2 ay',60,89,'120-150','6-7','700-900'],
+ ['3 ay *',90,119,'150-180','5-6','750-950'],
+ ['4 ay',120,149,'150-180','5-6','750-950'],
+ ['5 ay *',150,179,'180-210','4-5','750-950'],
+ ['6 ay',180,209,'180-230','4-5','720-960'],
+ ['7-12 ay',210,400,'180-240','3-4 (ek gıdayla)','700-950']
+];
+function vFeed(){
+  const days=S.baby.birth?Math.floor((Date.now()-parseDate(S.baby.birth))/864e5):-1;
+  let h=`<div class="card hint"><p style="margin:0">Aşağıdakiler <b>ortalama</b> değerler. Bebeğin iştahı ve kilosu belirleyici, istediği kadar vermek ve tokluk işaretlerini izlemek esastır. Günde yaklaşık 960 ml'yi geçmesi beklenmez.</p></div>`;
+  h+=`<div class="card" style="padding:6px 8px;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:14px;line-height:1.35"><tr style="text-align:left;color:var(--mute);font-size:12px"><th style="padding:6px 4px">Yaş</th><th>Öğün başına (ml)</th><th>Günde öğün</th><th>Günlük toplam (ml)</th></tr>`;
+  FEEDROWS.forEach(r=>{const on=days>=r[1]&&days<=r[2];h+=`<tr style="${on?'background:color-mix(in srgb,var(--pri) 18%,transparent);font-weight:600':''}"><td style="padding:8px 4px">${r[0]}${on?' ◀':''}</td><td>${r[3]}</td><td>${r[4]}</td><td>${r[5]}</td></tr>`;});
+  h+=`</table></div><div class="mute" style="font-size:12.5px;line-height:1.5;margin:6px 2px 12px">* Kaynaklar bu ayı ayrıca vermiyor, komşu aylardan tahmin edildi. Günlük toplamlar öğün başına miktar ile öğün sayısından hesaplandı.</div>`;
+  const g=[...S.growth].filter(x=>x.kg&&x.d).sort((a,b)=>a.d.localeCompare(b.d)).pop();
+  if(g&&days>=7&&days<183){const kg=+g.kg;h+=`<h2>Kiloya göre günlük toplam</h2><div class="card" style="line-height:1.55">Son kilo: ${String(kg).replace('.',',')} kg (${fmtDate(g.d)})<br>İngiltere sağlık servisi (150-200 ml/kg): <b>${Math.round(kg*150/10)*10}-${Math.round(kg*200/10)*10} ml</b><br>Amerikan Pediatri Akademisi (yaklaşık 165 ml/kg, en çok 960): <b>≈ ${Math.min(960,Math.round(kg*165/10)*10)} ml</b></div>`;}
+  h+=`<div class="mute" style="font-size:12.5px;line-height:1.5;margin-top:10px">Doğru miktarda mama alan bebekler genelde günde 6-8 ıslak bez yapar ve düzenli kilo alır. Sürekli doyamıyor, çok az yiyor ya da kilo alımı yavaşsa doktora sor.<br>Kaynaklar: HealthyChildren.org (Amerikan Pediatri Akademisi), NHS, Seattle Çocuk Hastanesi.</div>`;
+  return h;
+}
 const INFO=[
  {id:'doc',ic:'📋',t:'Doktor için özet',sub:()=>{return 'Ortalamalar, ölçümler, ateş, aşılar';},body:()=>vDoc()},
  {id:'appt',ic:'🩺',t:'Muayene randevuları',sub:()=>{const n=S.appts.filter(a=>a.t>=Date.now()-36e5).sort((a,b)=>a.t-b.t)[0];return n?'Sıradaki: '+fmtShort(n.t)+' '+hm(n.t):'Randevu ekle, takvime aktar';},body:vAppt},
+ {id:'feed',ic:'🍼',t:'Mama miktarı rehberi',sub:()=>'Yaşa göre öğün ve günlük miktar',body:()=>vFeed()},
  {id:'qs',ic:'❓',t:'Doktora sorulacaklar',sub:()=>{const n=S.qs.filter(q=>!q.done).length;return n?n+' bekleyen soru':'Aklına gelenleri yaz'},body:()=>vQs()},
  {id:'notes',ic:'📝',t:'Doktor notları',sub:()=>S.notes.length?S.notes.length+' not':'Doktorun tavsiyeleri',body:vNotes},
  {id:'snd',ic:'🎶',t:'Sesler ve ninniler',sub:()=>sndId?'Çalıyor: '+SND.find(x=>x.id===sndId).t:'Şşş, beyaz gürültü, kalp atışı, ninni',body:()=>vSnd()},
@@ -742,7 +768,7 @@ function vInfo(){
 /* DSÖ (WHO) büyüme standartları, 0-36 ay, LMS değerleri [L,M,S] */
 const WHO={"wm":[[0.3487,3.3464,0.14602],[0.2297,4.4709,0.13395],[0.197,5.5675,0.12385],[0.1738,6.3762,0.11727],[0.1553,7.0023,0.11316],[0.1395,7.5105,0.1108],[0.1257,7.934,0.10958],[0.1134,8.297,0.10902],[0.1021,8.6151,0.10882],[0.0917,8.9014,0.10881],[0.082,9.1649,0.10891],[0.073,9.4122,0.10906],[0.0644,9.6479,0.10925],[0.0563,9.8749,0.10949],[0.0487,10.0953,0.10976],[0.0413,10.3108,0.11007],[0.0343,10.5228,0.11041],[0.0275,10.7319,0.11079],[0.0211,10.9385,0.11119],[0.0148,11.143,0.11164],[0.0087,11.3462,0.11211],[0.0029,11.5486,0.11261],[-0.0028,11.7504,0.11314],[-0.0083,11.9514,0.11369],[-0.0137,12.1515,0.11426],[-0.0189,12.3502,0.11485],[-0.024,12.5466,0.11544],[-0.0289,12.7401,0.11604],[-0.0337,12.9303,0.11664],[-0.0385,13.1169,0.11723],[-0.0431,13.3,0.11781],[-0.0476,13.4798,0.11839],[-0.052,13.6567,0.11896],[-0.0564,13.8309,0.11953],[-0.0606,14.0031,0.12008],[-0.0648,14.1736,0.12062],[-0.0689,14.3429,0.12116]],"wf":[[0.3809,3.2322,0.14171],[0.1714,4.1873,0.13724],[0.0962,5.1282,0.13],[0.0402,5.8458,0.12619],[-0.005,6.4237,0.12402],[-0.043,6.8985,0.12274],[-0.0756,7.297,0.12204],[-0.1039,7.6422,0.12178],[-0.1288,7.9487,0.12181],[-0.1507,8.2254,0.12199],[-0.17,8.48,0.12223],[-0.1872,8.7192,0.12247],[-0.2024,8.9481,0.12268],[-0.2158,9.1699,0.12283],[-0.2278,9.387,0.12294],[-0.2384,9.6008,0.12299],[-0.2478,9.8124,0.12303],[-0.2562,10.0226,0.12306],[-0.2637,10.2315,0.12309],[-0.2703,10.4393,0.12315],[-0.2762,10.6464,0.12323],[-0.2815,10.8534,0.12335],[-0.2862,11.0608,0.1235],[-0.2903,11.2688,0.12369],[-0.2941,11.4775,0.1239],[-0.2975,11.6864,0.12414],[-0.3005,11.8947,0.12441],[-0.3032,12.1015,0.12472],[-0.3057,12.3059,0.12506],[-0.308,12.5073,0.12545],[-0.3101,12.7055,0.12587],[-0.312,12.9006,0.12633],[-0.3138,13.093,0.12683],[-0.3155,13.2837,0.12737],[-0.3171,13.4731,0.12794],[-0.3186,13.6618,0.12855],[-0.3201,13.8503,0.12919]],"lm":[[1.0,49.8842,0.03795],[1.0,54.7244,0.03557],[1.0,58.4249,0.03424],[1.0,61.4292,0.03328],[1.0,63.886,0.03257],[1.0,65.9026,0.03204],[1.0,67.6236,0.03165],[1.0,69.1645,0.03139],[1.0,70.5994,0.03124],[1.0,71.9687,0.03117],[1.0,73.2812,0.03118],[1.0,74.5388,0.03125],[1.0,75.7488,0.03137],[1.0,76.9186,0.03154],[1.0,78.0497,0.03174],[1.0,79.1458,0.03197],[1.0,80.2113,0.03222],[1.0,81.2487,0.0325],[1.0,82.2587,0.03279],[1.0,83.2418,0.0331],[1.0,84.1996,0.03342],[1.0,85.1348,0.03376],[1.0,86.0477,0.0341],[1.0,86.941,0.03445],[1.0,87.8161,0.03479],[1.0,87.972,0.03542],[1.0,88.8065,0.03576],[1.0,89.6197,0.0361],[1.0,90.412,0.03642],[1.0,91.1828,0.03674],[1.0,91.9327,0.03704],[1.0,92.6631,0.03733],[1.0,93.3753,0.03761],[1.0,94.0711,0.03787],[1.0,94.7532,0.03812],[1.0,95.4236,0.03836],[1.0,96.0835,0.03858]],"lf":[[1.0,49.1477,0.0379],[1.0,53.6872,0.0364],[1.0,57.0673,0.03568],[1.0,59.8029,0.0352],[1.0,62.0899,0.03486],[1.0,64.0301,0.03463],[1.0,65.7311,0.03448],[1.0,67.2873,0.03441],[1.0,68.7498,0.0344],[1.0,70.1435,0.03444],[1.0,71.4818,0.03452],[1.0,72.771,0.03464],[1.0,74.015,0.03479],[1.0,75.2176,0.03496],[1.0,76.3817,0.03514],[1.0,77.5099,0.03534],[1.0,78.6055,0.03555],[1.0,79.671,0.03576],[1.0,80.7079,0.03598],[1.0,81.7182,0.0362],[1.0,82.7036,0.03643],[1.0,83.6654,0.03666],[1.0,84.604,0.03688],[1.0,85.5202,0.03711],[1.0,86.4153,0.03734],[1.0,86.5904,0.03786],[1.0,87.4462,0.03808],[1.0,88.283,0.0383],[1.0,89.1004,0.03851],[1.0,89.8991,0.03872],[1.0,90.6797,0.03893],[1.0,91.443,0.03913],[1.0,92.1906,0.03933],[1.0,92.9239,0.03952],[1.0,93.6444,0.03971],[1.0,94.3533,0.03989],[1.0,95.0515,0.04006]],"hm":[[1.0,34.4618,0.03686],[1.0,37.2759,0.03133],[1.0,39.1285,0.02997],[1.0,40.5135,0.02918],[1.0,41.6317,0.02868],[1.0,42.5576,0.02837],[1.0,43.3306,0.02817],[1.0,43.9803,0.02804],[1.0,44.53,0.02796],[1.0,44.9998,0.02792],[1.0,45.4051,0.0279],[1.0,45.7573,0.02789],[1.0,46.0661,0.02789],[1.0,46.3395,0.02789],[1.0,46.5844,0.02791],[1.0,46.806,0.02792],[1.0,47.0088,0.02795],[1.0,47.1962,0.02797],[1.0,47.3711,0.028],[1.0,47.5357,0.02803],[1.0,47.6919,0.02806],[1.0,47.8408,0.0281],[1.0,47.9833,0.02813],[1.0,48.1201,0.02817],[1.0,48.2515,0.02821],[1.0,48.3777,0.02825],[1.0,48.4989,0.0283],[1.0,48.6151,0.02834],[1.0,48.7264,0.02838],[1.0,48.8331,0.02842],[1.0,48.9351,0.02847],[1.0,49.0327,0.02851],[1.0,49.126,0.02855],[1.0,49.2153,0.02859],[1.0,49.3007,0.02863],[1.0,49.3826,0.02867],[1.0,49.4612,0.02871]],"hf":[[1.0,33.8787,0.03496],[1.0,36.5463,0.0321],[1.0,38.2521,0.03168],[1.0,39.5328,0.0314],[1.0,40.5817,0.03119],[1.0,41.459,0.03102],[1.0,42.1995,0.03087],[1.0,42.829,0.03075],[1.0,43.3671,0.03063],[1.0,43.83,0.03053],[1.0,44.2319,0.03044],[1.0,44.5844,0.03035],[1.0,44.8965,0.03027],[1.0,45.1752,0.03019],[1.0,45.4265,0.03012],[1.0,45.6551,0.03006],[1.0,45.865,0.02999],[1.0,46.0598,0.02993],[1.0,46.2424,0.02987],[1.0,46.4152,0.02982],[1.0,46.5801,0.02977],[1.0,46.7384,0.02972],[1.0,46.8913,0.02967],[1.0,47.0391,0.02962],[1.0,47.1822,0.02957],[1.0,47.3204,0.02953],[1.0,47.4536,0.02949],[1.0,47.5817,0.02945],[1.0,47.7045,0.02941],[1.0,47.8219,0.02937],[1.0,47.934,0.02933],[1.0,48.041,0.02929],[1.0,48.1432,0.02926],[1.0,48.2408,0.02922],[1.0,48.3343,0.02919],[1.0,48.4239,0.02915],[1.0,48.5099,0.02912]]};
 let growthTab='w';
-const GK={w:{k:'kg',t:'Kilo',u:'kg',dec:1,lo:'hafif',hi:'ağır'},l:{k:'cm',t:'Boy',u:'cm',dec:1,lo:'kısa',hi:'uzun'},h:{k:'head',t:'Baş çevresi',u:'cm',dec:1,lo:'küçük',hi:'büyük'}};
+const GK={w:{k:'kg',t:'Kilo',u:'kg',dec:1,lo:'hafif',hi:'ağır'},l:{k:'cm',t:'Boy',u:'cm',dec:1,lo:'kısa',hi:'uzun'},h:{k:'head',t:'Baş çevresi',u:'cm',dec:1,lo:'küçük',hi:'büyük'},m:{k:'ml',t:'Mama',u:'ml'}};
 const PZ=[[-1.881,'3'],[-1.036,'15'],[0,'50'],[1.036,'85'],[1.881,'97']];
 function lmsAt(key,m){const a=WHO[key+(S.baby.sex==='f'?'f':'m')];m=Math.max(0,Math.min(36,m));const i=Math.min(35,Math.floor(m)),f=m-i,p=a[i],q=a[i+1];return [p[0]+(q[0]-p[0])*f,p[1]+(q[1]-p[1])*f,p[2]+(q[2]-p[2])*f];}
 const lmsVal=([L,M,S_],z)=>Math.abs(L)<1e-6?M*Math.exp(S_*z):M*Math.pow(1+L*S_*z,1/L);
@@ -774,16 +800,40 @@ function growthChart(key){
   return `<div class="card"><svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${g.t} büyüme eğrisi"><path d="${band}Z" fill="var(--pri)" opacity=".08"/>${grid}${lines}${baby}<text x="${(pl+W-pr)/2}" y="${H-5}" text-anchor="middle">yaş (ay)</text></svg>
   <div class="mute" style="font-size:12px;margin-top:4px"><span style="color:var(--med);font-weight:700">●</span> ${esc(S.baby.name||'Bebek')} &nbsp; <span style="color:var(--pri);font-weight:700">—</span> yaşıtların ortası &nbsp; <span style="color:var(--pri)">- -</span> 100 yaşıttan 3, 15, 85 ve 97 tanesinin sınırı</div></div>`;
 }
+
+/* Mama grafiği: son 14 günün günlük toplam miktarı ve yaşa göre beklenen aralık (FEEDROWS) */
+function feedBand(days){const r=FEEDROWS.find(x=>days>=x[1]&&days<=x[2]);if(!r||r[5]==='—')return null;const m=r[5].split('-').map(Number);return [m[0],m[1]];}
+function feedChart(){
+  const N=14,tk=parseDate(todayStr()),rows=[];
+  for(let i=N-1;i>=0;i--){const d=new Date(tk.getFullYear(),tk.getMonth(),tk.getDate()-i),k=dayKey(d);
+    const ev=S.events.filter(e=>(e.type==='bottle'||e.type==='breast')&&dayKey(e.t)===k);
+    const age=Math.floor((d-parseDate(S.baby.birth))/864e5);
+    rows.push({k,d,ml:ev.reduce((a,e)=>a+(e.ml||0),0),n:ev.length,band:feedBand(age),today:i===0});}
+  const W=340,H=240,pl=34,pr=8,pt=22,pb=34;
+  let ymax=1000;rows.forEach(r=>{ymax=Math.max(ymax,r.ml*1.05,r.band?r.band[1]*1.05:0);});ymax=Math.ceil(ymax/200)*200;
+  const bw=(W-pl-pr)/N,X=i=>pl+i*bw,Y=v=>H-pb-v/ymax*(H-pt-pb);
+  let grid='';for(let v=0;v<=ymax;v+=200)grid+=`<line x1="${pl}" y1="${Y(v)}" x2="${W-pr}" y2="${Y(v)}" stroke="var(--line)"/><text x="${pl-4}" y="${Y(v)+3}" text-anchor="end">${v}</text>`;
+  let band='',top='',bot='';
+  rows.forEach((r,i)=>{if(r.band){band+=`<rect x="${X(i).toFixed(1)}" y="${Y(r.band[1]).toFixed(1)}" width="${bw.toFixed(1)}" height="${(Y(r.band[0])-Y(r.band[1])).toFixed(1)}" fill="var(--pri)" opacity=".16"/>`;}});
+  const bars=rows.map((r,i)=>{if(!r.ml)return '';const x=X(i)+bw*0.18,w=bw*0.64;return `<rect x="${x.toFixed(1)}" y="${Y(r.ml).toFixed(1)}" width="${w.toFixed(1)}" height="${(H-pb-Y(r.ml)).toFixed(1)}" rx="2" fill="var(--med)" opacity="${r.today?'.45':'.9'}"/>`;}).join('');
+  const lab=rows.map((r,i)=>(i%2===(N-1)%2)?`<text x="${(X(i)+bw/2).toFixed(1)}" y="${H-pb+13}" text-anchor="middle">${r.d.getDate()}</text>`:'').join('');
+  const done=rows.filter(r=>!r.today&&r.n>0),avg=done.length?Math.round(done.reduce((a,r)=>a+r.ml,0)/done.length):0;
+  const bd=rows[N-1].band;
+  return `<div class="card"><svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Günlük mama miktarı">${grid}${band}${bars}${lab}<text x="${(pl+W-pr)/2}" y="${H-4}" text-anchor="middle">gün (ayın günü)</text><text x="4" y="10">ml / gün</text></svg>
+  <div class="mute" style="font-size:12px;margin-top:4px"><span style="color:var(--med);font-weight:700">■</span> ${esc(S.baby.name||'Bebek')} günlük toplam (bugün soluk, gün bitmedi) &nbsp; <span style="color:var(--pri);font-weight:700">■</span> yaşa göre beklenen aralık</div></div>
+  <div class="card"><b>Son günlerin ortalaması: ${avg?avg+' ml/gün':'veri yok'}</b>${bd?`<div style="margin-top:4px">Bu yaşta beklenen: ${bd[0]}-${bd[1]} ml/gün</div>`:''}<div class="mute" style="font-size:13px;margin-top:6px">Anne sütü ve mama kayıtları birlikte sayılır. Bu bir ortalama rehberdir, bebek kilo alıyor ve günde 6-8 ıslak bez yapıyorsa miktar uygundur.</div></div>`;
+}
 function lastPct(key){
   const pts=growthPts(key),l=pts[pts.length-1];if(!l||l.m===null)return null;
   return {d:l.d,v:l.v,p:pctOf(key,l.m,l.v)};
 }
 function vGrowth(){
   const g=[...S.growth].sort((a,b)=>a.d.localeCompare(b.d)),gk=GK[growthTab];
-  let h=`<button class="btn block pri" data-act="openGrowth" data-id="">+ Ölçüm ekle</button>
+  let h=(growthTab==='m'?'':`<button class="btn block pri" data-act="openGrowth" data-id="">+ Ölçüm ekle</button>`)+`
   <div class="seg" style="margin-top:14px">${Object.keys(GK).map(k=>`<button class="${growthTab===k?'on':''}" data-act="growthTab" data-v="${k}">${GK[k].t}</button>`).join('')}</div>
-  <h2>${gk.t} (${gk.u}) · ${S.baby.sex==='f'?'kız':'erkek'} bebek eğrisi</h2>`;
-  if(!S.baby.birth)h+=`<div class="card mute">Büyüme eğrisi için Ayarlar'dan doğum tarihini gir.</div>`;
+  <h2>${growthTab==='m'?'Günlük mama miktarı (son 14 gün)':gk.t+' ('+gk.u+') · '+(S.baby.sex==='f'?'kız':'erkek')+' bebek eğrisi'}</h2>`;
+  if(growthTab==='m'){h+=S.baby.birth?feedChart():`<div class="card mute">Önce Ayarlar'dan doğum tarihini gir.</div>`;}
+  else if(!S.baby.birth)h+=`<div class="card mute">Büyüme eğrisi için Ayarlar'dan doğum tarihini gir.</div>`;
   else{
     h+=growthChart(growthTab);
     const l=lastPct(growthTab);
@@ -791,6 +841,7 @@ function vGrowth(){
     else h+=`<div class="card mute">Henüz ${gk.t.toLowerCase()} ölçümü yok. Ölçüm ekleyince eğrinin üstünde görünür.</div>`;
     h+=`<div class="foot">Eğriler Dünya Sağlık Örgütü büyüme standartlarıdır. 3 ile 97 arasındaki değerler beklenen aralık kabul edilir. Tek bir ölçümden çok, ölçümlerin zaman içinde kendi eğrisini izlemesi önemlidir. Değerlendirmeyi doktor yapar.</div>`;
   }
+  if(growthTab==='m')return h;
   h+=`<h2>Ölçümler</h2>`;
   if(!g.length)h+=`<div class="card mute">Henüz ölçüm yok.</div>`;
   for(const x of [...g].reverse())h+=`<button class="item" data-act="openGrowth" data-id="${x.id}"><span class="ic">📏</span><span class="tx">${fmtDate(parseDate(x.d))}<small>${[x.kg?x.kg+' kg':'',x.cm?x.cm+' cm boy':'',x.head?x.head+' cm baş':''].filter(Boolean).join(' · ')}</small></span><span class="mute">›</span></button>`;
