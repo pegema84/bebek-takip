@@ -11,7 +11,7 @@ const FB={
   messagingSenderId:"386088030461",
   appId:"1:386088030461:web:563d1e025a90fe2aab6e94"
 };
-const VERSION='2.8',BUILD='22 Kasım 2026';
+const VERSION='2.9',BUILD='22 Kasım 2026';
 const FAM_KEY='bebektakip.family';
 const COLS=['events','meds','growth','vax','timers','meta','appts','notes','qs'];
 let S={baby:{name:'',birth:''},events:[],meds:[],vax:{},growth:[],timers:{},appts:[],notes:[],qs:[]};
@@ -632,8 +632,7 @@ const SND=[
  {id:'brahms',ic:'🎵',t:'Brahms ninnisi (müzik kutusu, sözsüz)',k:'m'}
 ];
 const MEL={brahms:{bpm:66,n:[[64,.5],[64,.5],[67,2],[64,.5],[64,.5],[67,2],[64,.5],[67,.5],[72,1],[71,2],[69,.5],[69,.5],[67,2],[62,.5],[64,.5],[65,2],[62,.5],[62,.5],[64,.5],[65,.5],[62,.5],[65,.5],[71,1],[69,2],[67,.5],[71,.5],[72,3],[0,1.5]]}};
-let AC=null,SG=null,SRC=null,SEL=null,sndId='',sndVol=30,sndMin=30,sndTm=null,sndAt=0;const sndBuf={};
-const sndGain=v=>Math.pow(v/100,2)*0.7;
+let AC=null,SEL=null,sndFd=null,sndId='',sndVol=30,sndMin=30,sndTm=null,sndAt=0;const sndBuf={};
 function sndMake(id){
   const sr=AC.sampleRate,m=SND.find(x=>x.id===id);let N,d;
   if(m.k==='m'){
@@ -683,25 +682,36 @@ function sndMake(id){
   {let r=0,pk=0;for(let i=0;i<N;i++){r+=d[i]*d[i];const x=Math.abs(d[i]);if(x>pk)pk=x;}r=Math.sqrt(r/N)||1;let g=0.17/r;if(pk*g>0.9)g=0.9/pk;for(let i=0;i<N;i++)d[i]*=g;}
   return b;
 }
+function sndWav(b,skip){
+  const a=b.getChannelData(0),n=a.length-skip,sr=b.sampleRate,buf=new ArrayBuffer(44+n*2),v=new DataView(buf);
+  const w=(o,t)=>{for(let k=0;k<t.length;k++)v.setUint8(o+k,t.charCodeAt(k));};
+  w(0,'RIFF');v.setUint32(4,36+n*2,true);w(8,'WAVEfmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,sr,true);v.setUint32(28,sr*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);w(36,'data');v.setUint32(40,n*2,true);
+  for(let k=0;k<n;k++){const x=Math.max(-1,Math.min(1,a[k+skip]));v.setInt16(44+k*2,x<0?x*32768:x*32767,true);}
+  return new Blob([buf],{type:'audio/wav'});
+}
+const sndVolOf=v=>Math.pow(v/100,2)*0.85;
+const sndUrl={};
+/* gerçek <audio> öğesi kullanılır: ekran kilitlenince de çalmaya devam eder ve bildirimde durdur düğmesi çıkar */
 function sndStart(id){
   const C=window.AudioContext||window.webkitAudioContext;if(!C)return flash('Bu telefon ses üretemiyor');
-  if(!AC)AC=new C();AC.resume&&AC.resume();
   sndHalt();
-  if(!sndBuf[id])sndBuf[id]=sndMake(id);
-  SG=AC.createGain();SG.gain.value=sndGain(sndVol);
-  SRC=AC.createBufferSource();SRC.buffer=sndBuf[id];SRC.loop=true;
-  const m=SND.find(x=>x.id===id);if(m.k!=='m'&&id!=='womb'&&id!=='white')SRC.loopStart=0.15;
-  SRC.connect(SG);
-  try{const dst=AC.createMediaStreamDestination();SG.connect(dst);SEL=new Audio();SEL.srcObject=dst.stream;SEL.play().catch(()=>{try{SG.connect(AC.destination);}catch(e){}});}catch(e){SEL=null;SG.connect(AC.destination);}
-  SRC.start();sndId=id;sndSetTimer();
-  try{if(navigator.mediaSession){navigator.mediaSession.metadata=new MediaMetadata({title:m.t,artist:'Bebek Takip'});navigator.mediaSession.setActionHandler('pause',()=>{sndStop();render();});navigator.mediaSession.setActionHandler('stop',()=>{sndStop();render();});}}catch(e){}
+  if(!sndUrl[id]){
+    if(!AC)AC=new C();
+    const m0=SND.find(x=>x.id===id),b=sndMake(id);
+    sndUrl[id]=URL.createObjectURL(sndWav(b,(m0.k!=='m'&&id!=='womb'&&id!=='white')?Math.floor(b.sampleRate*0.15):0));
+  }
+  const m=SND.find(x=>x.id===id);
+  SEL=new Audio(sndUrl[id]);SEL.loop=true;SEL.volume=sndVolOf(sndVol);
+  const pr=SEL.play();if(pr&&pr.catch)pr.catch(()=>{flash('Ses başlatılamadı');sndId='';render();});
+  sndId=id;sndSetTimer();
+  try{if(navigator.mediaSession){navigator.mediaSession.metadata=new MediaMetadata({title:m.t,artist:'Bebek Takip'});navigator.mediaSession.playbackState='playing';navigator.mediaSession.setActionHandler('pause',()=>{sndStop();render();});navigator.mediaSession.setActionHandler('stop',()=>{sndStop();render();});}}catch(e){}
 }
-function sndHalt(){clearTimeout(sndTm);sndTm=null;try{SRC&&SRC.stop();}catch(e){}try{SG&&SG.disconnect();}catch(e){}if(SEL){try{SEL.pause();SEL.srcObject=null;}catch(e){}SEL=null;}SRC=null;SG=null;}
+function sndHalt(){clearTimeout(sndTm);clearInterval(sndFd);sndTm=null;sndFd=null;if(SEL){try{SEL.pause();SEL.removeAttribute('src');SEL.load();}catch(e){}SEL=null;}try{if(navigator.mediaSession)navigator.mediaSession.playbackState='none';}catch(e){}}
 function sndStop(){sndHalt();sndId='';sndAt=0;}
 function sndSetTimer(){
   clearTimeout(sndTm);sndTm=null;sndAt=0;if(!sndMin||!sndId)return;
   sndAt=Date.now()+sndMin*60000;
-  sndTm=setTimeout(()=>{if(SG&&AC){SG.gain.setValueAtTime(SG.gain.value,AC.currentTime);SG.gain.linearRampToValueAtTime(0,AC.currentTime+8);}setTimeout(()=>{sndStop();if(tab==='info')render();},8500);},sndMin*60000);
+  sndTm=setTimeout(()=>{let k=0;const v0=SEL?SEL.volume:0;clearInterval(sndFd);sndFd=setInterval(()=>{k++;if(SEL)SEL.volume=Math.max(0,v0*(1-k/16));if(k>=16){sndStop();if(tab==='info')render();}},500);},sndMin*60000);
 }
 function vSnd(){
   let h=`<div class="card hint"><p style="margin:0">Sesi kısık tut, telefonu bebeğin başından uzağa koy ve uzun süre yüksek sesle dinletme.</p></div>`;
@@ -1045,7 +1055,7 @@ const H={
     save();closeSheet();render();flash('Kaydedildi');},
   delNote(el){S.notes=S.notes.filter(n=>n.id!==el.dataset.id);save();closeSheet();render();},
   sndPlay(el){if(sndId===el.dataset.id)sndStop();else sndStart(el.dataset.id);render();},
-  sndVol(el){sndVol=+el.value;if(SG&&AC)SG.gain.setTargetAtTime(sndGain(sndVol),AC.currentTime,0.05);},
+  sndVol(el){sndVol=+el.value;if(SEL)SEL.volume=sndVolOf(sndVol);},
   sndTimer(el){sndMin=+el.dataset.v;sndSetTimer();render();},
   infoBack(){infoTopic='';render();scrollTo(0,0);},
   gear(){openSettings();},
