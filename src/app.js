@@ -11,7 +11,7 @@ const FB={
   messagingSenderId:"386088030461",
   appId:"1:386088030461:web:563d1e025a90fe2aab6e94"
 };
-const VERSION='2.6',BUILD='22 Kasım 2026';
+const VERSION='2.7',BUILD='22 Kasım 2026';
 const FAM_KEY='bebektakip.family';
 const COLS=['events','meds','growth','vax','timers','meta','appts','notes','qs'];
 let S={baby:{name:'',birth:''},events:[],meds:[],vax:{},growth:[],timers:{},appts:[],notes:[],qs:[]};
@@ -619,11 +619,77 @@ function openNote(id){
   <button class="btn pri block" style="margin-top:16px" data-act="saveNote" data-id="${id||''}">Kaydet</button>
   ${id?delBlock('delNote',id):''}`);
 }
+
+/* Sesler ve ninni: tarayıcıda üretilir (Web Audio), dosya ve internet gerekmez */
+const SND=[
+ {id:'white',ic:'🌫️',t:'Beyaz gürültü',k:'n'},
+ {id:'pink',ic:'🌸',t:'Pembe gürültü (yumuşak)',k:'n'},
+ {id:'brown',ic:'🌊',t:'Kahverengi gürültü (derin)',k:'n'},
+ {id:'rain',ic:'🌧️',t:'Yağmur',k:'n'},
+ {id:'fan',ic:'🌀',t:'Fan sesi',k:'n'},
+ {id:'womb',ic:'🤰',t:'Rahim sesi (kalp atışı)',k:'n'},
+ {id:'brahms',ic:'🎵',t:'Brahms ninnisi (müzik kutusu, sözsüz)',k:'m'}
+];
+const MEL={brahms:{bpm:66,n:[[64,.5],[64,.5],[67,2],[64,.5],[64,.5],[67,2],[64,.5],[67,.5],[72,1],[71,2],[69,.5],[69,.5],[67,2],[62,.5],[64,.5],[65,2],[62,.5],[62,.5],[64,.5],[65,.5],[62,.5],[65,.5],[71,1],[69,2],[67,.5],[71,.5],[72,3],[0,1.5]]}};
+let AC=null,SG=null,SRC=null,SEL=null,sndId='',sndVol=30,sndMin=30,sndTm=null,sndAt=0;const sndBuf={};
+const sndGain=v=>Math.pow(v/100,2)*0.7;
+function sndMake(id){
+  const sr=AC.sampleRate,m=SND.find(x=>x.id===id);let N,d;
+  if(m.k==='m'){
+    const me=MEL[id],bt=60/me.bpm,tot=me.n.reduce((a,x)=>a+x[1],0)*bt;N=Math.ceil(tot*sr);const b=AC.createBuffer(1,N,sr);d=b.getChannelData(0);let t=0;
+    for(const [mi,du] of me.n){if(mi){const f=440*Math.pow(2,(mi-69)/12),i0=Math.floor(t*sr),len=Math.min(Math.floor(2.2*sr),N-i0);
+      for(let i=0;i<len;i++){const x=i/sr,e=Math.exp(-x*2.6);d[i0+i]+=0.32*e*(Math.sin(6.2832*f*x)+0.35*Math.sin(6.2832*f*2*x)*Math.exp(-x*3)+0.12*Math.sin(6.2832*f*3.01*x)*Math.exp(-x*6))*Math.min(1,x*400);}}
+      t+=du*bt;}
+    return b;
+  }
+  N=Math.floor(sr*8);const b=AC.createBuffer(1,N,sr);d=b.getChannelData(0);
+  let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0,last=0,lp=0,lp2=0;
+  for(let i=0;i<N;i++){const w=Math.random()*2-1,t=i/sr;
+    if(id==='white')d[i]=w*0.5;
+    else if(id==='pink'){b0=.99886*b0+w*.0555179;b1=.99332*b1+w*.0750759;b2=.969*b2+w*.153852;b3=.8665*b3+w*.3104856;b4=.55*b4+w*.5329522;b5=-.7616*b5-w*.016898;d[i]=(b0+b1+b2+b3+b4+b5+b6+w*.5362)*0.11;b6=w*.115926;}
+    else if(id==='brown'){last=(last+0.02*w)/1.02;d[i]=last*3.2;}
+    else if(id==='rain'){lp+=0.35*(w-lp);d[i]=(w-lp)*0.55*(0.85+0.15*Math.sin(6.2832*t/8*3));}
+    else if(id==='fan'){lp+=0.06*(w-lp);lp2+=0.5*(lp-lp2);d[i]=lp2*1.6+0.07*Math.sin(6.2832*100*t)+0.03*Math.sin(6.2832*200*t);}
+    else if(id==='womb'){lp+=0.012*(w-lp);lp2+=0.2*(lp-lp2);let v=lp2*7;const ph=t%0.8;
+      v+=0.55*Math.sin(6.2832*55*ph)*Math.exp(-ph*16)+(ph>0.24?0.38*Math.sin(6.2832*48*(ph-0.24))*Math.exp(-(ph-0.24)*18):0);d[i]=v*0.55;}
+  }
+  if(id!=='womb'&&id!=='white'&&id!=='rain'){const M=Math.floor(sr*0.15);for(let i=0;i<M;i++){const a=i/M;d[N-M+i]=d[N-M+i]*(1-a)+d[i]*a;}}
+  return b;
+}
+function sndStart(id){
+  const C=window.AudioContext||window.webkitAudioContext;if(!C)return flash('Bu telefon ses üretemiyor');
+  if(!AC)AC=new C();AC.resume&&AC.resume();
+  sndHalt();
+  if(!sndBuf[id])sndBuf[id]=sndMake(id);
+  SG=AC.createGain();SG.gain.value=sndGain(sndVol);
+  SRC=AC.createBufferSource();SRC.buffer=sndBuf[id];SRC.loop=true;
+  const m=SND.find(x=>x.id===id);if(m.k!=='m'&&id!=='womb'&&id!=='white'&&id!=='rain')SRC.loopStart=0.15;
+  SRC.connect(SG);
+  try{const dst=AC.createMediaStreamDestination();SG.connect(dst);SEL=new Audio();SEL.srcObject=dst.stream;SEL.play().catch(()=>{try{SG.connect(AC.destination);}catch(e){}});}catch(e){SEL=null;SG.connect(AC.destination);}
+  SRC.start();sndId=id;sndSetTimer();
+  try{if(navigator.mediaSession){navigator.mediaSession.metadata=new MediaMetadata({title:m.t,artist:'Bebek Takip'});navigator.mediaSession.setActionHandler('pause',()=>{sndStop();render();});navigator.mediaSession.setActionHandler('stop',()=>{sndStop();render();});}}catch(e){}
+}
+function sndHalt(){clearTimeout(sndTm);sndTm=null;try{SRC&&SRC.stop();}catch(e){}try{SG&&SG.disconnect();}catch(e){}if(SEL){try{SEL.pause();SEL.srcObject=null;}catch(e){}SEL=null;}SRC=null;SG=null;}
+function sndStop(){sndHalt();sndId='';sndAt=0;}
+function sndSetTimer(){
+  clearTimeout(sndTm);sndTm=null;sndAt=0;if(!sndMin||!sndId)return;
+  sndAt=Date.now()+sndMin*60000;
+  sndTm=setTimeout(()=>{if(SG&&AC){SG.gain.setValueAtTime(SG.gain.value,AC.currentTime);SG.gain.linearRampToValueAtTime(0,AC.currentTime+8);}setTimeout(()=>{sndStop();if(tab==='info')render();},8500);},sndMin*60000);
+}
+function vSnd(){
+  let h=`<div class="card hint"><p style="margin:0">Sesi kısık tut, telefonu bebeğin başından uzağa koy ve uzun süre yüksek sesle dinletme.</p></div>`;
+  SND.forEach(x=>{const on=sndId===x.id;h+=`<button class="item" data-act="sndPlay" data-id="${x.id}" style="${on?'border:2px solid var(--pri)':''}"><span class="ic">${x.ic}</span><span class="tx">${esc(x.t)}<small>${on?'Çalıyor · durdurmak için dokun':'Başlatmak için dokun'}</small></span><span style="font-size:22px">${on?'⏸':'▶'}</span></button>`;});
+  h+=`<label style="margin-top:12px">Ses düzeyi</label><input type="range" min="5" max="100" value="${sndVol}" data-inp="sndVol" style="width:100%">`;
+  h+=`<label style="margin-top:12px">Kendiliğinden kapanma</label><div class="chips">${[[0,'Kapalı'],[15,'15 dk'],[30,'30 dk'],[60,'1 saat']].map(([m,l])=>`<button class="${sndMin===m?'on':''}" data-act="sndTimer" data-v="${m}">${l}</button>`).join('')}</div>`;
+  if(sndId&&sndAt)h+=`<div class="mute" style="margin-top:8px">Kapanış: ${hm(sndAt)}</div>`;
+  return h;
+}
 const INFO=[
  {id:'doc',ic:'📋',t:'Doktor için özet',sub:()=>{return 'Ortalamalar, ölçümler, ateş, aşılar';},body:()=>vDoc()},
  {id:'appt',ic:'🩺',t:'Muayene randevuları',sub:()=>{const n=S.appts.filter(a=>a.t>=Date.now()-36e5).sort((a,b)=>a.t-b.t)[0];return n?'Sıradaki: '+fmtShort(n.t)+' '+hm(n.t):'Randevu ekle, takvime aktar';},body:vAppt},
  {id:'qs',ic:'❓',t:'Doktora sorulacaklar',sub:()=>{const n=S.qs.filter(q=>!q.done).length;return n?n+' bekleyen soru':'Aklına gelenleri yaz'},body:()=>vQs()},
  {id:'notes',ic:'📝',t:'Doktor notları',sub:()=>S.notes.length?S.notes.length+' not':'Doktorun tavsiyeleri',body:vNotes},
+ {id:'snd',ic:'🎶',t:'Sesler ve ninniler',sub:()=>sndId?'Çalıyor: '+SND.find(x=>x.id===sndId).t:'Beyaz gürültü, yağmur, ninni',body:()=>vSnd()},
  {id:'miles',ic:'🧸',t:'Bebekler bunları ne zaman yapar?',sub:'Gelişim basamakları, ay ay',body:bodyMiles}
 ];
 function vInfo(){
@@ -951,6 +1017,9 @@ const H={
     if(id){const n=S.notes.find(x=>x.id===id);if(n)Object.assign(n,o);}else S.notes.push(Object.assign({id:uid(),c:Date.now()},o));
     save();closeSheet();render();flash('Kaydedildi');},
   delNote(el){S.notes=S.notes.filter(n=>n.id!==el.dataset.id);save();closeSheet();render();},
+  sndPlay(el){if(sndId===el.dataset.id)sndStop();else sndStart(el.dataset.id);render();},
+  sndVol(el){sndVol=+el.value;if(SG&&AC)SG.gain.setTargetAtTime(sndGain(sndVol),AC.currentTime,0.05);},
+  sndTimer(el){sndMin=+el.dataset.v;sndSetTimer();render();},
   infoBack(){infoTopic='';render();scrollTo(0,0);},
   gear(){openSettings();},
   avgN(el){avgN=+el.dataset.v;render();},
