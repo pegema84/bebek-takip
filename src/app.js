@@ -11,7 +11,7 @@ const FB={
   messagingSenderId:"386088030461",
   appId:"1:386088030461:web:563d1e025a90fe2aab6e94"
 };
-const VERSION='3.3',BUILD='22 Kasım 2026';
+const VERSION='3.4',BUILD='22 Kasım 2026';
 const FAM_KEY='bebektakip.family';
 const COLS=['events','meds','growth','vax','timers','meta','appts','notes','qs'];
 let S={baby:{name:'',birth:''},events:[],meds:[],vax:{},growth:[],timers:{},appts:[],notes:[],qs:[]};
@@ -744,6 +744,11 @@ function vFeed(){
   h+=`<div class="card" style="padding:6px 8px;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:14px;line-height:1.35"><tr style="text-align:left;color:var(--mute);font-size:12px"><th style="padding:6px 4px">Yaş</th><th>Öğün başına (ml)</th><th>Günde öğün</th><th>Günlük toplam (ml)</th></tr>`;
   FEEDROWS.forEach(r=>{const on=days>=r[1]&&days<=r[2];h+=`<tr style="${on?'background:color-mix(in srgb,var(--pri) 18%,transparent);font-weight:600':''}"><td style="padding:8px 4px">${r[0]}${on?' ◀':''}</td><td>${r[3]}</td><td>${r[4]}</td><td>${r[5]}</td></tr>`;});
   h+=`</table></div><div class="mute" style="font-size:12.5px;line-height:1.5;margin:6px 2px 12px">* Kaynaklar bu ayı ayrıca vermiyor, komşu aylardan tahmin edildi. Günlük toplamlar öğün başına miktar ile öğün sayısından hesaplandı.</div>`;
+
+  {const r=FEEDROWS.find(x=>days>=x[1]&&days<=x[2]),br=brEst();
+   if(r&&r[5]!=='—'&&br>0){const pm=r[3].split('-').map(Number),nn=String(r[4]).match(/\d+/g).map(Number),dd=r[5].split('-').map(Number);
+     const a=Math.max(0,pm[0]-br),b2=Math.max(0,pm[1]-br),d0=Math.max(0,dd[0]-nn[0]*br),d1=Math.max(0,dd[1]-nn[nn.length>1?1:0]*br);
+     h+=`<h2>Her mama öncesi ${br} ml emziriyorsan</h2><div class="card" style="line-height:1.6">Bu yaş için toplam <b>${r[3]} ml</b> öğün başına. Emzirme payı (~${br} ml) çıkınca mama: <b>~${a}-${b2} ml</b> öğün başına, günde yaklaşık <b>${d0}-${d1} ml</b>.<div class="mute" style="font-size:13px;margin-top:4px">${br} ml bir tahmin, gerçek miktar bilinmiyor. Ayarlar'dan değiştirebilirsin.</div></div>`;}}
   const g=[...S.growth].filter(x=>x.kg&&x.d).sort((a,b)=>a.d.localeCompare(b.d)).pop();
   if(g&&days>=7&&days<183){const kg=+g.kg;h+=`<h2>Kiloya göre günlük toplam</h2><div class="card" style="line-height:1.55">Son kilo: ${String(kg).replace('.',',')} kg (${fmtDate(g.d)})<br>İngiltere sağlık servisi (150-200 ml/kg): <b>${Math.round(kg*150/10)*10}-${Math.round(kg*200/10)*10} ml</b><br>Amerikan Pediatri Akademisi (yaklaşık 165 ml/kg, en çok 960): <b>≈ ${Math.min(960,Math.round(kg*165/10)*10)} ml</b></div>`;}
   h+=`<div class="mute" style="font-size:12.5px;line-height:1.5;margin-top:10px">Doğru miktarda mama alan bebekler genelde günde 6-8 ıslak bez yapar ve düzenli kilo alır. Sürekli doyamıyor, çok az yiyor ya da kilo alımı yavaşsa doktora sor.<br>Kaynaklar: HealthyChildren.org (Amerikan Pediatri Akademisi), NHS, Seattle Çocuk Hastanesi.</div>`;
@@ -802,26 +807,29 @@ function growthChart(key){
 }
 
 /* Mama grafiği: son 14 günün günlük toplam miktarı ve yaşa göre beklenen aralık (FEEDROWS) */
+const brEst=()=>{const v=S.baby.br;return v===undefined||v===null||v===''||isNaN(+v)?30:Math.max(0,Math.min(120,+v));};
 function feedBand(days){const r=FEEDROWS.find(x=>days>=x[1]&&days<=x[2]);if(!r||r[5]==='—')return null;const m=r[5].split('-').map(Number);return [m[0],m[1]];}
 function feedChart(){
   const N=14,tk=parseDate(todayStr()),rows=[];
   for(let i=N-1;i>=0;i--){const d=new Date(tk.getFullYear(),tk.getMonth(),tk.getDate()-i),k=dayKey(d);
     const ev=S.events.filter(e=>(e.type==='bottle'||e.type==='breast')&&dayKey(e.t)===k);
     const age=Math.floor((d-parseDate(S.baby.birth))/864e5);
-    rows.push({k,d,ml:ev.reduce((a,e)=>a+(e.ml||0),0),n:ev.length,band:feedBand(age),today:i===0});}
+    const rec=ev.reduce((a,e)=>a+(e.ml||0),0),br=ev.filter(e=>e.type==='bottle'&&e.kind==='Mama').length*brEst();
+    rows.push({k,d,rec,br,ml:rec+br,n:ev.length,band:feedBand(age),today:i===0});}
   const W=340,H=240,pl=34,pr=8,pt=22,pb=34;
   let ymax=1000;rows.forEach(r=>{ymax=Math.max(ymax,r.ml*1.05,r.band?r.band[1]*1.05:0);});ymax=Math.ceil(ymax/200)*200;
   const bw=(W-pl-pr)/N,X=i=>pl+i*bw,Y=v=>H-pb-v/ymax*(H-pt-pb);
   let grid='';for(let v=0;v<=ymax;v+=200)grid+=`<line x1="${pl}" y1="${Y(v)}" x2="${W-pr}" y2="${Y(v)}" stroke="var(--line)"/><text x="${pl-4}" y="${Y(v)+3}" text-anchor="end">${v}</text>`;
   let band='',top='',bot='';
   rows.forEach((r,i)=>{if(r.band){band+=`<rect x="${X(i).toFixed(1)}" y="${Y(r.band[1]).toFixed(1)}" width="${bw.toFixed(1)}" height="${(Y(r.band[0])-Y(r.band[1])).toFixed(1)}" fill="var(--pri)" opacity=".16"/>`;}});
-  const bars=rows.map((r,i)=>{if(!r.ml)return '';const x=X(i)+bw*0.18,w=bw*0.64;return `<rect x="${x.toFixed(1)}" y="${Y(r.ml).toFixed(1)}" width="${w.toFixed(1)}" height="${(H-pb-Y(r.ml)).toFixed(1)}" rx="2" fill="var(--med)" opacity="${r.today?'.45':'.9'}"/>`;}).join('');
+  const bars=rows.map((r,i)=>{if(!r.ml)return '';const x=X(i)+bw*0.18,w=bw*0.64,op=r.today?'.45':'.9';return `<rect x="${x.toFixed(1)}" y="${Y(r.rec).toFixed(1)}" width="${w.toFixed(1)}" height="${(H-pb-Y(r.rec)).toFixed(1)}" rx="2" fill="var(--med)" opacity="${op}"/>`+(r.br?`<rect x="${x.toFixed(1)}" y="${Y(r.ml).toFixed(1)}" width="${w.toFixed(1)}" height="${(Y(r.rec)-Y(r.ml)).toFixed(1)}" rx="2" fill="var(--med)" opacity="${r.today?'.2':'.4'}"/>`:'');}).join('');
   const lab=rows.map((r,i)=>(i%2===(N-1)%2)?`<text x="${(X(i)+bw/2).toFixed(1)}" y="${H-pb+13}" text-anchor="middle">${r.d.getDate()}</text>`:'').join('');
   const done=rows.filter(r=>!r.today&&r.n>0),avg=done.length?Math.round(done.reduce((a,r)=>a+r.ml,0)/done.length):0;
   const bd=rows[N-1].band;
+  const verdict=(avg&&bd)?(avg<bd[0]?`<div style="margin-top:6px;color:var(--warn,#b36b00)"><b>Beklenen aralığın biraz altında.</b> Kilo alımı ve ıslak bez sayısı iyiyse sorun olmayabilir, ama doktora söyle.</div>`:avg>bd[1]?`<div style="margin-top:6px;color:var(--warn,#b36b00)"><b>Beklenen aralığın üstünde.</b> Bebek hep doyamıyorsa doktora sor.</div>`:`<div style="margin-top:6px;color:var(--ok,#2f8478)"><b>✓ Beklenen aralıkta.</b></div>`):'';
   return `<div class="card"><svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Günlük mama miktarı">${grid}${band}${bars}${lab}<text x="${(pl+W-pr)/2}" y="${H-4}" text-anchor="middle">gün (ayın günü)</text><text x="4" y="10">ml / gün</text></svg>
-  <div class="mute" style="font-size:12px;margin-top:4px"><span style="color:var(--med);font-weight:700">■</span> ${esc(S.baby.name||'Bebek')} günlük toplam (bugün soluk, gün bitmedi) &nbsp; <span style="color:var(--pri);font-weight:700">■</span> yaşa göre beklenen aralık</div></div>
-  <div class="card"><b>Son günlerin ortalaması: ${avg?avg+' ml/gün':'veri yok'}</b>${bd?`<div style="margin-top:4px">Bu yaşta beklenen: ${bd[0]}-${bd[1]} ml/gün</div>`:''}<div class="mute" style="font-size:13px;margin-top:6px">Anne sütü ve mama kayıtları birlikte sayılır. Bu bir ortalama rehberdir, bebek kilo alıyor ve günde 6-8 ıslak bez yapıyorsa miktar uygundur.</div></div>`;
+  <div class="mute" style="font-size:12px;margin-top:4px"><span style="color:var(--med);font-weight:700">■</span> ${esc(S.baby.name||'Bebek')} kayıtlı miktar &nbsp; <span style="color:var(--med);opacity:.45;font-weight:700">■</span> tahmini emzirme (bugün soluk, gün bitmedi) &nbsp; <span style="color:var(--pri);font-weight:700">■</span> yaşa göre beklenen aralık</div></div>
+  <div class="card"><b>Son günlerin ortalaması: ${avg?avg+' ml/gün':'veri yok'}</b>${bd?`<div style="margin-top:4px">Bu yaşta beklenen (anne sütü + mama toplamı): ${bd[0]}-${bd[1]} ml/gün</div>`:''}${verdict}<div class="mute" style="font-size:13px;margin-top:6px">Anne sütü ve mama kayıtları birlikte sayılır. Her mama öğününe otomatik ${brEst()} ml tahmini emzirme eklenir (Ayarlar'dan değiştirebilir veya 0 yapabilirsin). Bu bir ortalama rehberdir, bebek kilo alıyor ve günde 6-8 ıslak bez yapıyorsa miktar uygundur.</div></div>`;
 }
 function lastPct(key){
   const pts=growthPts(key),l=pts[pts.length-1];if(!l||l.m===null)return null;
@@ -1036,6 +1044,7 @@ function openSettings(){
   <label>Adı</label><input type="text" id="s-name" value="${esc(S.baby.name)}" placeholder="Bebeğin adı">
   <label>Doğum tarihi</label><input type="date" id="s-birth" value="${esc(S.baby.birth)}">
   <label>Cinsiyet (büyüme eğrisi için)</label><div class="seg"><button class="${sel.sex==='m'?'on':''}" data-act="seg" data-g="sex" data-v="m">Erkek</button><button class="${sel.sex==='f'?'on':''}" data-act="seg" data-g="sex" data-v="f">Kız</button></div>
+  <label>Her mama öğününde tahmini emzirme (ml)</label><input type="number" id="s-br" inputmode="numeric" min="0" max="120" value="${brEst()}"><div class="mute" style="font-size:12.5px;margin-top:4px">Sadece Büyüme → Mama grafiğinde toplama eklenir. Emzirmiyorsan 0 yaz.</div>
   <label>Bu telefonu kullanan (kayıtlarda görünür)</label><input type="text" id="s-who" value="${esc(who())}" placeholder="Anne, Baba…" maxlength="20">
   <div class="chips">${['Anne','Baba'].map(n=>`<button data-act="whoName" data-v="${n}">${n}</button>`).join('')}</div>
   <button class="btn pri block" style="margin-top:16px" data-act="saveSettings">Kaydet</button>
@@ -1174,7 +1183,7 @@ const H={
     let x=S.growth.find(g=>g.id===el.dataset.id);if(!x){x={id:uid()};S.growth.push(x);}
     x.d=$('#g-date').value||todayStr();x.kg=isNaN(kg)?null:kg;x.cm=isNaN(cm)?null:cm;x.head=isNaN(hd)?null:hd;save();closeSheet();render();},
   delGrowth(el){S.growth=S.growth.filter(g=>g.id!==el.dataset.id);save();closeSheet();render();},
-  saveSettings(){S.baby.name=$('#s-name').value.trim();S.baby.birth=$('#s-birth').value;if(sel.sex)S.baby.sex=sel.sex;try{const w=$('#s-who').value.trim();if(w)localStorage.setItem('bt_who',w);else localStorage.removeItem('bt_who');}catch(e){}save();closeSheet();render();},
+  saveSettings(){S.baby.name=$('#s-name').value.trim();{const b=num($('#s-br').value);S.baby.br=isNaN(b)?30:Math.max(0,Math.min(120,Math.round(b)));}S.baby.birth=$('#s-birth').value;if(sel.sex)S.baby.sex=sel.sex;try{const w=$('#s-who').value.trim();if(w)localStorage.setItem('bt_who',w);else localStorage.removeItem('bt_who');}catch(e){}save();closeSheet();render();},
   backup(){backupJSON().then(js=>{const ta=$('#s-backup');if(!ta)return;ta.value=js;ta.select();markBackup();
     try{navigator.clipboard.writeText(js).then(()=>flash('Kopyalandı'),()=>flash('Metni elle kopyala'));}catch(e){flash('Metni elle kopyala');}});},
   backupFile(){flash('Yedek hazırlanıyor…');backupJSON().then(async js=>{
