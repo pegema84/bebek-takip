@@ -11,7 +11,7 @@ const FB={
   messagingSenderId:"386088030461",
   appId:"1:386088030461:web:563d1e025a90fe2aab6e94"
 };
-const VERSION='2.5',BUILD='22 Kasım 2026';
+const VERSION='2.6',BUILD='22 Kasım 2026';
 const FAM_KEY='bebektakip.family';
 const COLS=['events','meds','growth','vax','timers','meta','appts','notes','qs'];
 let S={baby:{name:'',birth:''},events:[],meds:[],vax:{},growth:[],timers:{},appts:[],notes:[],qs:[]};
@@ -628,7 +628,7 @@ const INFO=[
 ];
 function vInfo(){
   const t=INFO.find(x=>x.id===infoTopic);
-  if(t)return `<button class="btn sm ghost" data-act="infoBack" style="margin-bottom:6px">← Bilgi menüsü</button><h2 style="margin-top:8px">${t.ic} ${esc(t.t)}</h2>`+t.body();
+  if(t)return `<button class="btn sm ghost" data-act="infoBack" style="margin-bottom:6px;background:var(--pri);color:var(--priInk);border-color:var(--pri)">← Bilgi menüsü</button><h2 style="margin-top:8px">${t.ic} ${esc(t.t)}</h2>`+t.body();
   let h=`<h2>📖 Bilgi menüsü</h2>`;
   for(const x of INFO)h+=`<button class="item" data-act="infoOpen" data-id="${x.id}"><span class="ic">${x.ic}</span><span class="tx">${esc(x.t)}<small>${esc(typeof x.sub==='function'?x.sub():x.sub)}</small></span><span class="tag mute">›</span></button>`;
   return h;
@@ -643,7 +643,7 @@ const lmsVal=([L,M,S_],z)=>Math.abs(L)<1e-6?M*Math.exp(S_*z):M*Math.pow(1+L*S_*z
 const lmsZ=([L,M,S_],x)=>Math.abs(L)<1e-6?Math.log(x/M)/S_:(Math.pow(x/M,L)-1)/(L*S_);
 function normCdf(z){const t=1/(1+0.2316419*Math.abs(z)),d=0.3989423*Math.exp(-z*z/2);const p=d*t*(0.3193815+t*(-0.3565638+t*(1.781478+t*(-1.821256+t*1.330274))));return z>0?1-p:p;}
 function pctOf(key,ageM,x){return normCdf(lmsZ(lmsAt(key,ageM),x))*100;}
-function pctText(p){return p<1?'1. persentilin altında':p>99?'99. persentilin üstünde':'yaklaşık '+Math.round(p)+'. persentil';}
+function pctText(p){return p<1?'100 yaşıt bebekten 1 tanesinden bile küçük':p>99?'100 yaşıt bebekten 99 tanesinden büyük':'100 yaşıt bebekten yaklaşık '+Math.round(p)+' tanesinden büyük';}
 function growthPts(key){
   const k=GK[key].k,b=S.baby.birth?+parseDate(S.baby.birth):null;
   return S.growth.filter(x=>x[k]&&x.d).map(x=>({d:x.d,v:+x[k],m:b===null?null:(+parseDate(x.d)-b)/864e5/30.4375})).filter(x=>x.m===null||(x.m>=-0.1&&x.m<=36)).sort((a,b2)=>a.d.localeCompare(b2.d));
@@ -666,7 +666,7 @@ function growthChart(key){
   const lines=PZ.map(([z,l])=>`<path d="${curve(z)}" fill="none" stroke="var(--pri)" stroke-width="${z===0?2:1}" ${z===0?'':'stroke-dasharray="4 3" opacity=".75"'}/><text x="${W-pr+3}" y="${Y(lmsVal(lmsAt(key,xmax),z))+3}">${l}</text>`).join('');
   const baby=(pts.length>1?`<polyline points="${pts.map(p=>X(p.m).toFixed(1)+','+Y(p.v).toFixed(1)).join(' ')}" fill="none" stroke="var(--med)" stroke-width="2.5" stroke-linejoin="round"/>`:'')+pts.map(p=>`<circle cx="${X(p.m).toFixed(1)}" cy="${Y(p.v).toFixed(1)}" r="4.5" fill="var(--med)" stroke="var(--card)" stroke-width="1.5"/>`).join('');
   return `<div class="card"><svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${g.t} büyüme eğrisi"><path d="${band}Z" fill="var(--pri)" opacity=".08"/>${grid}${lines}${baby}<text x="${(pl+W-pr)/2}" y="${H-5}" text-anchor="middle">yaş (ay)</text></svg>
-  <div class="mute" style="font-size:12px;margin-top:4px"><span style="color:var(--med);font-weight:700">●</span> ${esc(S.baby.name||'Bebek')} &nbsp; <span style="color:var(--pri);font-weight:700">—</span> yaşıtların ortası (50) &nbsp; <span style="color:var(--pri)">- -</span> 3, 15, 85, 97. persentil</div></div>`;
+  <div class="mute" style="font-size:12px;margin-top:4px"><span style="color:var(--med);font-weight:700">●</span> ${esc(S.baby.name||'Bebek')} &nbsp; <span style="color:var(--pri);font-weight:700">—</span> yaşıtların ortası &nbsp; <span style="color:var(--pri)">- -</span> 100 yaşıttan 3, 15, 85 ve 97 tanesinin sınırı</div></div>`;
 }
 function lastPct(key){
   const pts=growthPts(key),l=pts[pts.length-1];if(!l||l.m===null)return null;
@@ -681,7 +681,7 @@ function vGrowth(){
   else{
     h+=growthChart(growthTab);
     const l=lastPct(growthTab);
-    if(l){const r=Math.round(l.p);h+=`<div class="card"><b>Son ölçüm: ${f1(l.v)} ${gk.u}</b> <span class="mute">(${fmtDate(parseDate(l.d))})</span><div style="margin-top:4px">${pctText(l.p)}${l.p>=1&&l.p<=99?`: aynı yaştaki 100 ${S.baby.sex==='f'?'kız':'erkek'} bebekten yaklaşık ${r} tanesinden daha ${gk.hi}.`:'.'}</div></div>`;}
+    if(l){const r=Math.round(l.p);h+=`<div class="card"><b>Son ölçüm: ${f1(l.v)} ${gk.u}</b> <span class="mute">(${fmtDate(parseDate(l.d))})</span><div style="margin-top:4px">${pctText(l.p)}</div></div>`;}
     else h+=`<div class="card mute">Henüz ${gk.t.toLowerCase()} ölçümü yok. Ölçüm ekleyince eğrinin üstünde görünür.</div>`;
     h+=`<div class="foot">Eğriler Dünya Sağlık Örgütü büyüme standartlarıdır. 3 ile 97 arasındaki değerler beklenen aralık kabul edilir. Tek bir ölçümden çok, ölçümlerin zaman içinde kendi eğrisini izlemesi önemlidir. Değerlendirmeyi doktor yapar.</div>`;
   }
@@ -933,7 +933,7 @@ function copyText(t){
   try{navigator.clipboard.writeText(t).then(()=>flash('Kopyalandı'),()=>flash('Kopyalanamadı'));}catch(e){flash('Kopyalanamadı');}
 }
 const H={
-  tab(el){if(!$('#sheet').hidden)closeSheet();tab=el.dataset.v;if(el.dataset.topic!==undefined)infoTopic=el.dataset.topic;render();scrollTo(0,0);},
+  tab(el){if(!$('#sheet').hidden)closeSheet();if(el.dataset.v==='info'&&tab==='info'&&el.dataset.topic===undefined)infoTopic='';tab=el.dataset.v;if(el.dataset.topic!==undefined)infoTopic=el.dataset.topic;render();scrollTo(0,0);},
   infoOpen(el){infoTopic=el.dataset.id;render();scrollTo(0,0);},
   openAppt(el){openAppt(el.dataset.id);},
   apptTitle(el){$('#a-title').value=el.dataset.v;},
