@@ -11,7 +11,7 @@ const FB={
   messagingSenderId:"386088030461",
   appId:"1:386088030461:web:563d1e025a90fe2aab6e94"
 };
-const VERSION='3.4',BUILD='22 Kasım 2026';
+const VERSION='3.5',BUILD='23 Kasım 2026';
 const FAM_KEY='bebektakip.family';
 const COLS=['events','meds','growth','vax','timers','meta','appts','notes','qs'];
 let S={baby:{name:'',birth:''},events:[],meds:[],vax:{},growth:[],timers:{},appts:[],notes:[],qs:[]};
@@ -462,7 +462,7 @@ function vaxImage(){
       const nl=note?wrap(note,W-2*P-40,fnt(24,400)):[];
       const hh=70+(nl.length?nl.length*32+10:0)+gi.length*86+16;
       D(()=>{rr(P-12,y,W-2*P+24,hh,26,C.card,C.line);});
-      D(()=>{txt(g.l,P+16,y+46,fnt(36,800),g.k?C.warn:C.ink);});
+      D(()=>{txt((g.k?'🩺 ':'')+g.l,P+16,y+46,fnt(36,800),g.k?C.warn:C.ink);});
       D(()=>{txt(fd(gi[0].due)+(gdone===gi.length?'  ✓':''),W-P-16,y+46,fnt(30,600),gdone===gi.length?C.ok:C.mute,'right');});
       let yy=y+70;
       if(nl.length){nl.forEach((l,k)=>D(()=>txt(l,P+16,yy+28+k*32,fnt(24,400),C.mute)));yy+=nl.length*32+10;}
@@ -478,12 +478,9 @@ function vaxImage(){
       });
       y+=hh+22;
     };
-    for(const g of VAX)section(g);
-    if(VOPT.length){
-      D(()=>{txt('Doktorun önerdiği özel aşılar',P,y+40,fnt(40,800),C.warn);});
-      D(()=>{txt('Ulusal takvimde yok, doktorun reçetesine göre eklendi.',P,y+80,fnt(26,400),C.mute);});
-      y+=110;for(const g of VOPT)section(g);
-    }
+    const lg=wrap('(özel) işaretliler ulusal takvimde yok, doktorun önerdiği ücretli aşılardır.',W-2*P,fnt(26,400));
+    lg.forEach((l,k)=>D(()=>txt(l,P,y+30+k*34,fnt(26,400),C.warn)));y+=lg.length*34+26;
+    for(const g of ALLV)section(g);
     const fl=wrap('Takvim, T.C. Sağlık Bakanlığı ulusal çocukluk dönemi aşı takvimine göre hazırlandı. Tarihler yaklaşıktır, kesin randevuyu aile hekimi verir.',W-2*P,fnt(24,400));
     fl.forEach((l,k)=>D(()=>txt(l,P,y+30+k*32,fnt(24,400),C.mute)));
     y+=fl.length*32+24;
@@ -522,11 +519,10 @@ function vVax(){
     const it=items.filter(i=>i.g===nextG&&!i.done),d=dd(it[0].due);
     h+=`<div class="card next"><div class="mute" style="font-size:13px">Sıradaki aşılar</div><b>${nextG.l}</b> · ${fmtDate(it[0].due)}<div class="${d<0?'bad':d<=14?'warn':'mute'}" style="font-weight:600;margin-top:2px">${d<0?-d+' gün gecikti':d===0?'Bugün':d+' gün kaldı'}</div><div style="margin-top:6px">${it.map(i=>esc(i.name)).join(' · ')}</div></div>`;
   }else h+=`<div class="card next"><b>Takvimdeki tüm aşılar tamam 🎉</b></div>`;
-  let optHead=false;
-  for(const g of [...VAX,...VOPT]){
-    if(g.k&&!optHead){optHead=true;h+=`<h2 style="margin-top:22px">🩺 Doktorun önerdiği özel aşılar</h2><div class="foot" style="margin-top:-4px">Bunlar ulusal takvimde yok, doktorun reçetesine göre eklendi.</div>`;}
+  h+=`<div class="foot" style="margin:10px 2px 0">🩺 <span class="tag warn" style="font-size:11px">özel</span> işaretliler ulusal takvimde yok. Doktorun önerdiği, ücretli aşılardır ve takvimde kendi zamanlarına yerleştirildi.</div>`;
+  for(const g of ALLV){
     const gi=items.filter(i=>i.g===g);
-    h+=`<h2>${g.l} · ${fmtShort(gi[0].due)} ${gi[0].due.getFullYear()}</h2>`;
+    h+=`<h2${g.k?' style="color:var(--warn,#c9741c)"':''}>${g.k?'🩺 ':''}${g.l} · ${fmtShort(gi[0].due)} ${gi[0].due.getFullYear()}</h2>`;
     if(g.note||g.info)h+=`<div class="foot" style="margin-top:-4px">${g.note||g.info}</div>`;
     for(const i of gi){
       const d=dd(i.due);
