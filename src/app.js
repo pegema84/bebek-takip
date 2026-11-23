@@ -11,7 +11,7 @@ const FB={
   messagingSenderId:"386088030461",
   appId:"1:386088030461:web:563d1e025a90fe2aab6e94"
 };
-const VERSION='3.5',BUILD='23 Kasım 2026';
+const VERSION='3.6',BUILD='23 Kasım 2026';
 const FAM_KEY='bebektakip.family';
 const COLS=['events','meds','growth','vax','timers','meta','appts','notes','qs'];
 let S={baby:{name:'',birth:''},events:[],meds:[],vax:{},growth:[],timers:{},appts:[],notes:[],qs:[]};
@@ -255,7 +255,7 @@ function alertList(){
       if(g.note)return;
       const u=items.filter(i=>i.g===g&&!i.done);if(!u.length)return;
       const d=Math.round((u[0].due-today)/864e5);
-      if(d<=14)out.push({tab:'vax',ic:'💉',t:g.l+': '+u.map(i=>i.name).join(', '),tag:d<0?(-d)+' gün gecikti':d===0?'Bugün':d+' gün kaldı',cls:d<0?'bad':'warn',d});
+      if(d<=14)out.push({tab:'vax',ic:'💉',t:g.l,l:u.map(i=>i.name),tag:d<0?(-d)+' gün gecikti':d===0?'Bugün':d+' gün kaldı',cls:d<0?'bad':'warn',d});
     });
   }
   S.appts.forEach(a=>{
@@ -352,7 +352,7 @@ function vToday(){
   const vd=vday(),isT=vd===tk,today=all.filter(e=>dayKey(eT(e))===vd);
   let h='';
   if(!S.baby.birth)h+=`<div class="card hint"><b>Başlayalım</b><p>Bebeğin adını ve doğum tarihini gir. Aşı takvimi buna göre hesaplanır.</p><button class="btn pri" data-act="gear">Bilgileri gir</button></div>`;
-  for(const a of alertList())h+=`<button class="item" data-act="${a.act||'tab'}" data-v="${a.tab}"${a.topic?` data-topic="${a.topic}"`:''} style="border-color:var(--${a.cls==='bad'?'bad':'warn'})"><span class="ic">${a.ic}</span><span class="tx">${esc(a.t)}</span><span class="tag ${a.cls}">${esc(a.tag)}</span></button>`;
+  for(const a of alertList())h+=`<button class="item" data-act="${a.act||'tab'}" data-v="${a.tab}"${a.topic?` data-topic="${a.topic}"`:''} style="border-color:var(--${a.cls==='bad'?'bad':'warn'})"><span class="ic">${a.ic}</span><span class="tx">${esc(a.t)}${(a.l||[]).map(n=>`<small style="color:var(--ink);font-size:15px;margin-top:3px">• ${esc(n)}</small>`).join('')}</span><span class="tag ${a.cls}">${esc(a.tag)}</span></button>`;
   for(const k of Object.keys(S.timers)){
     const t=S.timers[k];
     const lab=k==='breast'?'🤱 Emzirme'+(t.side?' · '+esc(t.side):''):'😴 Uyku';
@@ -514,10 +514,13 @@ function vVax(){
   const items=vaxItems(),today=parseDate(todayStr());
   const dd=d=>Math.round((d-today)/864e5);
   let h='';
-  const nextG=ALLV.find(g=>items.some(i=>i.g===g&&!i.done));
-  if(nextG){
-    const it=items.filter(i=>i.g===nextG&&!i.done),d=dd(it[0].due);
-    h+=`<div class="card next"><div class="mute" style="font-size:13px">Sıradaki aşılar</div><b>${nextG.l}</b> · ${fmtDate(it[0].due)}<div class="${d<0?'bad':d<=14?'warn':'mute'}" style="font-weight:600;margin-top:2px">${d<0?-d+' gün gecikti':d===0?'Bugün':d+' gün kaldı'}</div><div style="margin-top:6px">${it.map(i=>esc(i.name)).join(' · ')}</div></div>`;
+  const pend=ALLV.filter(g=>items.some(i=>i.g===g&&!i.done));
+  let show=pend.filter(g=>dd(items.find(i=>i.g===g&&!i.done).due)<=14);if(!show.length)show=pend.slice(0,1);
+  if(show.length){
+    for(const nextG of show){
+      const it=items.filter(i=>i.g===nextG&&!i.done),d=dd(it[0].due);
+      h+=`<div class="card next"><div class="mute" style="font-size:13px">${nextG.k?'🩺 Özel aşı':'Sıradaki aşılar'}</div><b>${nextG.l}</b> · ${fmtDate(it[0].due)}<div class="${d<0?'bad':d<=14?'warn':'mute'}" style="font-weight:600;margin-top:2px">${d<0?-d+' gün gecikti':d===0?'Bugün':d+' gün kaldı'}</div><div style="margin-top:6px">${it.map(i=>'• '+esc(i.name)).join('<br>')}</div></div>`;
+    }
   }else h+=`<div class="card next"><b>Takvimdeki tüm aşılar tamam 🎉</b></div>`;
   h+=`<div class="foot" style="margin:10px 2px 0">🩺 <span class="tag warn" style="font-size:11px">özel</span> işaretliler ulusal takvimde yok. Doktorun önerdiği, ücretli aşılardır ve takvimde kendi zamanlarına yerleştirildi.</div>`;
   for(const g of ALLV){
@@ -635,8 +638,8 @@ function sndMake(id){
   const sr=AC.sampleRate,m=SND.find(x=>x.id===id);let N,d;
   if(m.k==='m'){
     const me=MEL[id],bt=60/me.bpm,tot=me.n.reduce((a,x)=>a+x[1],0)*bt;N=Math.ceil(tot*sr);const b=AC.createBuffer(1,N,sr);d=b.getChannelData(0);let t=0;
-    for(const [mi,du] of me.n){if(mi){const f=440*Math.pow(2,(mi-69)/12),i0=Math.floor(t*sr),len=Math.min(Math.floor(2.2*sr),N-i0);
-      for(let i=0;i<len;i++){const x=i/sr,e=Math.exp(-x*2.6);d[i0+i]+=0.32*e*(Math.sin(6.2832*f*x)+0.35*Math.sin(6.2832*f*2*x)*Math.exp(-x*3)+0.12*Math.sin(6.2832*f*3.01*x)*Math.exp(-x*6))*Math.min(1,x*400);}}
+    for(const [mi,du] of me.n){if(mi){const f=440*Math.pow(2,(mi-69)/12),i0=Math.floor(t*sr),len=Math.floor(2.2*sr);
+      for(let i=0;i<len;i++){const x=i/sr,e=Math.exp(-x*2.6);d[(i0+i)%N]+=0.32*e*(Math.sin(6.2832*f*x)+0.35*Math.sin(6.2832*f*2*x)*Math.exp(-x*3)+0.12*Math.sin(6.2832*f*3.01*x)*Math.exp(-x*6))*Math.min(1,x*400);}}
       t+=du*bt;}
     return b;
   }
@@ -681,10 +684,10 @@ function sndMake(id){
   return b;
 }
 function sndWav(b,skip){
-  const a=b.getChannelData(0),n=a.length-skip,sr=b.sampleRate,buf=new ArrayBuffer(44+n*2),v=new DataView(buf);
+  const a=b.getChannelData(0),n1=a.length-skip,sr=b.sampleRate,reps=Math.max(1,Math.ceil(90*sr/n1)),n=n1*reps,buf=new ArrayBuffer(44+n*2),v=new DataView(buf);
   const w=(o,t)=>{for(let k=0;k<t.length;k++)v.setUint8(o+k,t.charCodeAt(k));};
   w(0,'RIFF');v.setUint32(4,36+n*2,true);w(8,'WAVEfmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,sr,true);v.setUint32(28,sr*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);w(36,'data');v.setUint32(40,n*2,true);
-  for(let k=0;k<n;k++){const x=Math.max(-1,Math.min(1,a[k+skip]));v.setInt16(44+k*2,x<0?x*32768:x*32767,true);}
+  for(let k=0;k<n;k++){const x=Math.max(-1,Math.min(1,a[(k%n1)+skip]));v.setInt16(44+k*2,x<0?x*32768:x*32767,true);}
   return new Blob([buf],{type:'audio/wav'});
 }
 const sndVolOf=v=>Math.pow(v/100,2)*0.85;
