@@ -11,7 +11,7 @@ const FB={
   messagingSenderId:"386088030461",
   appId:"1:386088030461:web:563d1e025a90fe2aab6e94"
 };
-const VERSION='3.6',BUILD='23 Kasım 2026';
+const VERSION='3.7',BUILD='24 Kasım 2026';
 const FAM_KEY='bebektakip.family';
 const COLS=['events','meds','growth','vax','timers','meta','appts','notes','qs'];
 let S={baby:{name:'',birth:''},events:[],meds:[],vax:{},growth:[],timers:{},appts:[],notes:[],qs:[]};
@@ -1051,6 +1051,8 @@ function openSettings(){
   <div class="mute" style="font-size:14px;margin-bottom:8px">Eşin bu kodla ya da aşağıdaki davet linkiyle aynı kayıtları görür. Kodu sadece eşinle paylaş.</div>
   <div class="card" style="font-family:ui-monospace,monospace;word-break:break-all;font-size:15px">${showCode(FID)}</div>
   <div class="two"><button class="btn" data-act="copyInvite">Davet linkini kopyala</button><button class="btn" data-act="copyCode">Kodu kopyala</button></div>
+  <label>E-posta ile davet (Gmail vb.)</label><input type="email" id="s-mail" inputmode="email" autocomplete="off" placeholder="eşinin e-posta adresi (boş bırakabilirsin)">
+  <button class="btn block" style="margin-top:8px" data-act="mailInvite">✉️ E-posta ile davet gönder</button>
   <label>Başka bir aile koduna katıl</label><input type="text" id="j-code" autocapitalize="off" autocomplete="off" placeholder="xxxx-xxxx-...">
   <button class="btn block" style="margin-top:10px" data-act="joinFam">Bu koda geç</button>
   <div style="margin-top:10px"><button class="btn block ghost bad" data-act="askDel">Bu telefondan çık</button><div id="delConfirm" hidden><div class="two"><button class="btn danger" data-act="leaveFam">Evet, çık</button><button class="btn" data-act="close">Vazgeç</button></div></div></div>`:''}
@@ -1203,7 +1205,10 @@ const H={
   joinFam(){const c=cleanCode($('#j-code').value);if(c.length<20)return flash('Kod eksik ya da hatalı');setFamily(c);location.reload();},
   leaveFam(){setFamily('');location.reload();},
   copyCode(){copyText(showCode(FID));},
-  copyInvite(){copyText(location.origin+location.pathname+'#f='+FID);}
+  copyInvite(){copyText(location.origin+location.pathname+'#f='+FID);},
+  mailInvite(){const to=(document.getElementById('s-mail')||{}).value||'';const link=location.origin+location.pathname+'#f='+FID;
+    const body='Merhaba,\n\n'+(S.baby.name||'Bebek')+' için Bebek Takip uygulamasına davetlisin. Bu linke dokun, uygulama açılınca aynı kayıtları görürsün:\n\n'+link+'\n\nAna ekrana eklersen uygulama gibi kullanabilirsin (Android: Chrome menüsü > Ana ekrana ekle, iPhone: Safari Paylaş > Ana Ekrana Ekle).\n\nBu linki sadece aile içinde paylaş.';
+    location.href='mailto:'+encodeURIComponent(to.trim())+'?subject='+encodeURIComponent('Bebek Takip daveti')+'&body='+encodeURIComponent(body);}
 };
 document.addEventListener('click',e=>{
   if(e.target.id==='sheet'){closeSheet();return;}
