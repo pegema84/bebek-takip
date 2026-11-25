@@ -88,6 +88,9 @@ textarea{min-height:90px}
 .chips button.on::before{content:'✓ '}
 .or{text-align:center;color:var(--mute);font-size:13px;margin:16px 0 2px}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+button,a,input,select,textarea,summary{touch-action:manipulation}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid var(--pri);outline-offset:2px}
+#sheetBody{overscroll-behavior:contain}
 #toast{position:fixed;left:50%;bottom:calc(92px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:20px;font-size:14px;z-index:30}
 .next{background:color-mix(in srgb,var(--pri) 12%,var(--card));border-color:var(--pri)}
 .next b{font-size:17px}
@@ -102,8 +105,8 @@ svg text{fill:var(--mute);font-size:10px}
 </header>
 <main id="view"></main>
 <nav id="nav"></nav>
-<div id="sheet" hidden><div id="sheetBody"></div></div>
-<div id="toast" hidden></div>
+<div id="sheet" hidden><div id="sheetBody" role="dialog" aria-modal="true" aria-label="Detay"></div></div>
+<div id="toast" hidden role="status" aria-live="polite"></div>
 
 <noscript>Bu uygulama JavaScript gerektirir.</noscript>
 <script src="app.js"></script>

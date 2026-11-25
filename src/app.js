@@ -11,7 +11,7 @@ const FB={
   messagingSenderId:"386088030461",
   appId:"1:386088030461:web:563d1e025a90fe2aab6e94"
 };
-const VERSION='3.7',BUILD='24 Kasım 2026';
+const VERSION='3.8',BUILD='25 Kasım 2026';
 const FAM_KEY='bebektakip.family';
 const COLS=['events','meds','growth','vax','timers','meta','appts','notes','qs'];
 let S={baby:{name:'',birth:''},events:[],meds:[],vax:{},growth:[],timers:{},appts:[],notes:[],qs:[]};
@@ -352,7 +352,7 @@ function vToday(){
   const vd=vday(),isT=vd===tk,today=all.filter(e=>dayKey(eT(e))===vd);
   let h='';
   if(!S.baby.birth)h+=`<div class="card hint"><b>Başlayalım</b><p>Bebeğin adını ve doğum tarihini gir. Aşı takvimi buna göre hesaplanır.</p><button class="btn pri" data-act="gear">Bilgileri gir</button></div>`;
-  for(const a of alertList())h+=`<button class="item" data-act="${a.act||'tab'}" data-v="${a.tab}"${a.topic?` data-topic="${a.topic}"`:''} style="border-color:var(--${a.cls==='bad'?'bad':'warn'})"><span class="ic">${a.ic}</span><span class="tx">${esc(a.t)}${(a.l||[]).map(n=>`<small style="color:var(--ink);font-size:15px;margin-top:3px">• ${esc(n)}</small>`).join('')}</span><span class="tag ${a.cls}">${esc(a.tag)}</span></button>`;
+  for(const a of alertList())h+=`<button class="item" data-act="${a.act||'tab'}" data-v="${a.tab}"${a.topic?` data-topic="${a.topic}"`:''} style="border-color:var(--${a.cls==='bad'?'bad':'warn'})"><span class="ic" aria-hidden="true">${a.ic}</span><span class="tx">${esc(a.t)}${(a.l||[]).map(n=>`<small style="color:var(--ink);font-size:15px;margin-top:3px">• ${esc(n)}</small>`).join('')}</span><span class="tag ${a.cls}">${esc(a.tag)}</span></button>`;
   for(const k of Object.keys(S.timers)){
     const t=S.timers[k];
     const lab=k==='breast'?'🤱 Emzirme'+(t.side?' · '+esc(t.side):''):'😴 Uyku';
@@ -366,7 +366,7 @@ function vToday(){
   const lastB=all.find(e=>e.type==='bottle');
   if(isT&&lastB)h+=`<button class="btn block" style="margin:-2px 0 12px" data-act="repeatBottle">🔁 Aynısını şimdi kaydet: ${lastB.ml} ml ${esc(lastB.kind||'')}</button>`;
   const lastT=all.find(e=>e.type==='temp');
-  if(lastT&&now-lastT.t<24*36e5)h+=`<button class="item" data-act="openEv" data-id="${lastT.id}" style="${lastT.c>=38?'border-color:var(--bad)':''}"><span class="ic">🌡️</span><span class="tx">Son ateş: ${f1(lastT.c)} °C<small>${ago(now-lastT.t)}${feverMedText(now)}</small></span></button>`;
+  if(lastT&&now-lastT.t<24*36e5)h+=`<button class="item" data-act="openEv" data-id="${lastT.id}" style="${lastT.c>=38?'border-color:var(--bad)':''}"><span class="ic" aria-hidden="true">🌡️</span><span class="tx">Son ateş: ${f1(lastT.c)} °C<small>${ago(now-lastT.t)}${feverMedText(now)}</small></span></button>`;
   const lastFeed=all.find(e=>e.type==='breast'||e.type==='bottle');
   const lastD=all.find(e=>e.type==='diaper');
   const lastDirty=all.find(e=>e.type==='diaper'&&e.kind!=='wet');
@@ -387,7 +387,7 @@ function vToday(){
   const oldWait=needOld(vd);
   if(oldWait)h+=`<div class="card mute">Eski kayıtlar yükleniyor…</div>`;
   else if(!today.length)h+=`<div class="card mute">${isT?'Bugün henüz kayıt yok. Yukarıdaki düğmelerle başla.':'Bu günde kayıt yok.'}</div>`;
-  for(const e of today){const i=evInfo(e);h+=`<button class="item" data-act="openEv" data-id="${e.id}"><span class="ic">${i.ic}</span><span class="tx">${esc(i.t)}${(i.s||e.by)?`<small>${esc([i.s,e.by].filter(Boolean).join(' · '))}</small>`:''}</span><span class="tm2">${hm(e.t)}</span></button>`;}
+  for(const e of today){const i=evInfo(e);h+=`<button class="item" data-act="openEv" data-id="${e.id}"><span class="ic" aria-hidden="true">${i.ic}</span><span class="tx">${esc(i.t)}${(i.s||e.by)?`<small>${esc([i.s,e.by].filter(Boolean).join(' · '))}</small>`:''}</span><span class="tm2">${hm(e.t)}</span></button>`;}
   h+=avgCard();
   return h;
 }
@@ -420,11 +420,11 @@ function vMed(){
     h+=`<h2>Gerektiğinde</h2>`;
     for(const m of prn){
       const last=[...S.events].filter(e=>e.type==='med'&&e.medId===m.id).sort((a,b)=>b.t-a.t)[0];
-      h+=`<div class="item"><span class="ic">💊</span><span class="tx">${esc(m.name)}<small>${esc(m.dose||'')}${last?' · son: '+ago(now-last.t):''}</small></span><button class="btn sm pri" data-act="medNow" data-id="${m.id}">Verdim</button></div>`;
+      h+=`<div class="item"><span class="ic" aria-hidden="true">💊</span><span class="tx">${esc(m.name)}<small>${esc(m.dose||'')}${last?' · son: '+ago(now-last.t):''}</small></span><button class="btn sm pri" data-act="medNow" data-id="${m.id}">Verdim</button></div>`;
     }
   }
   h+=`<h2>İlaçlarım</h2>`;
-  for(const m of S.meds)h+=`<button class="item" data-act="openMed" data-id="${m.id}"><span class="ic">${m.off?'⏸':'💊'}</span><span class="tx">${esc(m.name)}<small>${esc(m.dose||'')}${(m.times||[]).length?' · '+m.times.join(', '):' · gerektiğinde'}${m.off?' · kapalı':''}</small></span><span class="mute">›</span></button>`;
+  for(const m of S.meds)h+=`<button class="item" data-act="openMed" data-id="${m.id}"><span class="ic" aria-hidden="true">${m.off?'⏸':'💊'}</span><span class="tx">${esc(m.name)}<small>${esc(m.dose||'')}${(m.times||[]).length?' · '+m.times.join(', '):' · gerektiğinde'}${m.off?' · kapalı':''}</small></span><span class="mute">›</span></button>`;
   h+=`<button class="btn block pri" data-act="openMed" data-id="">+ İlaç / vitamin ekle</button>`;
   h+=`<button class="btn block" style="margin-top:12px" data-act="icsMed">📅 İlaç saatlerini takvime ekle</button><div class="foot">Takvimde her gün tekrarlanır ve alarm çalar. Bir ilacı bırakırsan o etkinliği takvimden de silmen gerekir. Geciken dozlar burada ve Bugün ekranında turuncu görünür.</div>`;
   return h;
@@ -563,7 +563,7 @@ function bodyMiles(){
   let h=`<div class="foot" style="margin:0 4px 10px">Her bebek kendi hızında gelişir; aylar ortalama değerlerdir.${am!==null?' Bebeğinin şu anki dönemine denk gelenler <b>Şimdi</b> ile işaretli.':''}</div>`;
   MILES.forEach((m,i)=>{
     const now=am!==null&&am>=m[2]-.5&&am<=m[3]+.5;
-    h+=`<div class="item" style="${now?'border-color:var(--pri)':''}"><span class="ic" style="font-weight:700;color:var(--mute);font-size:16px">${i+1}</span><span class="tx"><b>${esc(m[0])}</b><small>${esc(m[1])}</small></span>${now?'<span class="tag ok" style="margin-right:6px">Şimdi</span>':''}<span class="tag mute">${m[4]}</span></div>`;
+    h+=`<div class="item" style="${now?'border-color:var(--pri)':''}"><span class="ic" aria-hidden="true" style="font-weight:700;color:var(--mute);font-size:16px">${i+1}</span><span class="tx"><b>${esc(m[0])}</b><small>${esc(m[1])}</small></span>${now?'<span class="tag ok" style="margin-right:6px">Şimdi</span>':''}<span class="tag mute">${m[4]}</span></div>`;
   });
   return h;
 }
@@ -573,7 +573,7 @@ function vAppt(){
   let h=`<button class="btn pri block" data-act="openAppt" data-id="">+ Randevu ekle</button>`;
   const row=(a,old)=>{const dk=Math.round((parseDate(dayKey(a.t))-parseDate(todayStr()))/864e5);
     const tg=old?'':`<span class="tag ${dk<=2?'warn':'mute'}">${dk<=0?'Bugün':dk===1?'Yarın':dk+' gün'}</span>`;
-    return `<button class="item" data-act="openAppt" data-id="${a.id}"><span class="ic">🩺</span><span class="tx"><b>${esc(a.title||'Muayene')}</b><small>${esc(dtLong(a.t))} · ${hm(a.t)}${a.place?' · '+esc(a.place):''}</small></span>${tg}</button>`;};
+    return `<button class="item" data-act="openAppt" data-id="${a.id}"><span class="ic" aria-hidden="true">🩺</span><span class="tx"><b>${esc(a.title||'Muayene')}</b><small>${esc(dtLong(a.t))} · ${hm(a.t)}${a.place?' · '+esc(a.place):''}</small></span>${tg}</button>`;};
   h+=`<h2>Yaklaşan</h2>`;
   if(!up.length)h+=`<div class="card mute">Yaklaşan randevu yok.</div>`;
   up.forEach(a=>h+=row(a,false));
@@ -587,7 +587,7 @@ function openAppt(id){
   <div class="two"><div><label>Tarih</label><input type="date" id="a-date" value="${d?dayKey(a.t):''}"></div><div><label>Saat</label><input type="time" id="a-time" value="${d?hm(a.t):'10:00'}"></div></div>
   <label>Ne için</label><input type="text" id="a-title" value="${esc(a.title||'Muayene')}">
   <div class="chips">${['Muayene','Kontrol','Aşı','Tahlil'].map(n=>`<button data-act="apptTitle" data-v="${n}">${n}</button>`).join('')}</div>
-  <label>Doktor / yer</label><input type="text" id="a-place" value="${esc(a.place||'')}" placeholder="Dr. ... / hastane">
+  <label>Doktor / yer</label><input type="text" id="a-place" value="${esc(a.place||'')}" placeholder="Dr. Ad Soyad / hastane…">
   <label>Not</label><textarea id="a-note" rows="3" placeholder="Götürülecekler, sorulacaklar">${esc(a.note||'')}</textarea>
   <button class="btn pri block" style="margin-top:16px" data-act="saveAppt" data-id="${id||''}">Kaydet</button>
   ${id?`<button class="btn block" style="margin-top:10px" data-act="icsAppt" data-id="${id}">📅 Takvime ekle</button>${delBlock('delAppt',id)}`:''}`);
@@ -606,14 +606,14 @@ function vNotes(){
   let h=`<button class="btn pri block" data-act="openNote" data-id="">+ Not ekle</button><div class="foot">Doktorun tavsiyelerini buraya yaz, ikiniz de görürsünüz.</div>`;
   if(!all.length)h+=`<div class="card mute">Henüz not yok.</div>`;
   all.forEach(n=>{const sn=(n.text||'').replace(/\s+/g,' ').slice(0,110);
-    h+=`<button class="item" data-act="openNote" data-id="${n.id}"><span class="ic">📝</span><span class="tx"><b>${esc(n.title||sn.slice(0,40)||'Not')}</b><small>${n.d?esc(fmtDate(parseDate(n.d))):''}${n.title&&sn?' · '+esc(sn):''}</small></span></button>`;});
+    h+=`<button class="item" data-act="openNote" data-id="${n.id}"><span class="ic" aria-hidden="true">📝</span><span class="tx"><b>${esc(n.title||sn.slice(0,40)||'Not')}</b><small>${n.d?esc(fmtDate(parseDate(n.d))):''}${n.title&&sn?' · '+esc(sn):''}</small></span></button>`;});
   return h;
 }
 function openNote(id){
   const n=S.notes.find(x=>x.id===id)||{};
   openSheet(`<h3>📝 ${id?'Notu düzenle':'Doktor notu ekle'}</h3>
   <label>Tarih</label><input type="date" id="n-date" value="${n.d||todayStr()}">
-  <label>Başlık (isteğe bağlı)</label><input type="text" id="n-title" value="${esc(n.title||'')}" placeholder="Beslenme, ilaç, uyku…">
+  <label>Başlık (isteğe bağlı)</label><input type="text" id="n-title" value="${esc(n.title||'')}" placeholder="Beslenme, ilaç, uykuu…">
   <label>Not</label><textarea id="n-text" rows="9" placeholder="Doktorun söyledikleri">${esc(n.text||'')}</textarea>
   <button class="btn pri block" style="margin-top:16px" data-act="saveNote" data-id="${id||''}">Kaydet</button>
   ${id?delBlock('delNote',id):''}`);
@@ -716,7 +716,7 @@ function sndSetTimer(){
 }
 function vSnd(){
   let h=`<div class="card hint"><p style="margin:0"><b>Güvenli kullanım:</b> Sesi kısık tut, telefonu bebeğin başından en az 1-2 metre uzağa koy ve bebek uyuyunca kapat. Araştırmalarda bebek ses makinelerinin yüksek sesle çalınınca işitmeye zarar verebileceği görüldü.</p></div>`;
-  SND.forEach(x=>{const on=sndId===x.id;h+=`<button class="item" data-act="sndPlay" data-id="${x.id}" style="${on?'border:2px solid var(--pri)':''}"><span class="ic">${x.ic}</span><span class="tx">${esc(x.t)}<small>${on?'Çalıyor · durdurmak için dokun':'Başlatmak için dokun'}</small></span><span style="font-size:22px">${on?'⏸':'▶'}</span></button>`;});
+  SND.forEach(x=>{const on=sndId===x.id;h+=`<button class="item" data-act="sndPlay" data-id="${x.id}" style="${on?'border:2px solid var(--pri)':''}"><span class="ic" aria-hidden="true">${x.ic}</span><span class="tx">${esc(x.t)}<small>${on?'Çalıyor · durdurmak için dokun':'Başlatmak için dokun'}</small></span><span style="font-size:22px">${on?'⏸':'▶'}</span></button>`;});
   h+=`<label style="margin-top:12px">Ses düzeyi</label><input type="range" min="5" max="100" value="${sndVol}" data-inp="sndVol" style="width:100%">`;
   h+=`<label style="margin-top:12px">Kendiliğinden kapanma</label><div class="chips">${[[0,'Kapalı'],[15,'15 dk'],[30,'30 dk'],[60,'1 saat']].map(([m,l])=>`<button class="${sndMin===m?'on':''}" data-act="sndTimer" data-v="${m}">${l}</button>`).join('')}</div>`;
   if(sndId&&sndAt)h+=`<div class="mute" style="margin-top:8px">Kapanış: ${hm(sndAt)}</div>`;
@@ -766,7 +766,7 @@ function vInfo(){
   const t=INFO.find(x=>x.id===infoTopic);
   if(t)return `<button class="btn sm ghost" data-act="infoBack" style="margin-bottom:6px;background:var(--pri);color:var(--priInk);border-color:var(--pri)">← Bilgi menüsü</button><h2 style="margin-top:8px">${t.ic} ${esc(t.t)}</h2>`+t.body();
   let h=`<h2>📖 Bilgi menüsü</h2>`;
-  for(const x of INFO)h+=`<button class="item" data-act="infoOpen" data-id="${x.id}"><span class="ic">${x.ic}</span><span class="tx">${esc(x.t)}<small>${esc(typeof x.sub==='function'?x.sub():x.sub)}</small></span><span class="tag mute">›</span></button>`;
+  for(const x of INFO)h+=`<button class="item" data-act="infoOpen" data-id="${x.id}"><span class="ic" aria-hidden="true">${x.ic}</span><span class="tx">${esc(x.t)}<small>${esc(typeof x.sub==='function'?x.sub():x.sub)}</small></span><span class="tag mute">›</span></button>`;
   return h;
 }
 /* DSÖ (WHO) büyüme standartları, 0-36 ay, LMS değerleri [L,M,S] */
@@ -851,7 +851,7 @@ function vGrowth(){
   if(growthTab==='m')return h;
   h+=`<h2>Ölçümler</h2>`;
   if(!g.length)h+=`<div class="card mute">Henüz ölçüm yok.</div>`;
-  for(const x of [...g].reverse())h+=`<button class="item" data-act="openGrowth" data-id="${x.id}"><span class="ic">📏</span><span class="tx">${fmtDate(parseDate(x.d))}<small>${[x.kg?x.kg+' kg':'',x.cm?x.cm+' cm boy':'',x.head?x.head+' cm baş':''].filter(Boolean).join(' · ')}</small></span><span class="mute">›</span></button>`;
+  for(const x of [...g].reverse())h+=`<button class="item" data-act="openGrowth" data-id="${x.id}"><span class="ic" aria-hidden="true">📏</span><span class="tx">${fmtDate(parseDate(x.d))}<small>${[x.kg?x.kg+' kg':'',x.cm?x.cm+' cm boy':'',x.head?x.head+' cm baş':''].filter(Boolean).join(' · ')}</small></span><span class="mute">›</span></button>`;
   return h;
 }
 
@@ -912,7 +912,7 @@ function vDoc(){
 
 function vWelcome(){
   return `<div class="card hint"><b>Hoş geldin 👋</b><p>Bebeğin kayıtları, sadece sizin bildiğiniz gizli bir aile kodu ile saklanır. Eşinle aynı kodu kullanarak ikiniz de aynı kayıtları görürsünüz.</p><button class="btn pri block" data-act="createFam">Yeni aile oluştur</button></div>
-  <div class="card"><b>Eşim zaten oluşturdu</b><label>Eşinin gönderdiği kodu yapıştır</label><input type="text" id="j-code" autocapitalize="off" autocomplete="off" placeholder="xxxx-xxxx-xxxx-..."><button class="btn block" style="margin-top:10px" data-act="joinFam">Katıl</button></div>`;
+  <div class="card"><b>Eşim zaten oluşturdu</b><label>Eşinin gönderdiği kodu yapıştır</label><input type="text" id="j-code" autocapitalize="off" autocomplete="off" placeholder="xxxx-xxxx-xxxx-…"><button class="btn block" style="margin-top:10px" data-act="joinFam">Katıl</button></div>`;
 }
 function render(){
   $('#babyName').textContent=(FID&&S.baby.name)||'Bebek Takip';
@@ -923,14 +923,15 @@ function render(){
   else if(authFail&&!got.size)v=`<div class="card hint"><b>İnternet gerekli</b><p>İlk açılışta bir kez internete bağlanmak gerekiyor. Bağlanınca kendiliğinden devam eder.</p></div>`;
   else v=({today:vToday,med:vMed,vax:vVax,growth:vGrowth,info:vInfo})[tab]();
   if(syncError==='permission-denied')v=`<div class="card hint"><b>Veritabanı erişimi reddedildi</b><p>Firebase güvenlik kuralları yayınlanmamış ya da yanlış olabilir.</p></div>`+v;
-  $('#view').innerHTML=v;
-  $('#nav').innerHTML=FID?TABS.map(t=>`<button class="${t[0]===tab?'on':''}" data-act="tab" data-v="${t[0]}"><span>${t[1]}</span>${t[2]}</button>`).join(''):'';
+  $('#view').innerHTML=v;noAuto($('#view'));
+  $('#nav').innerHTML=FID?TABS.map(t=>`<button class="${t[0]===tab?'on':''}" data-act="tab" data-v="${t[0]}"><span aria-hidden="true">${t[1]}</span>${t[2]}</button>`).join(''):'';
   $('#nav').hidden=!FID;
 }
 
 /* ---------- alt sayfa (sheet) ---------- */
 let sel={};
-function openSheet(html){$('#sheetBody').innerHTML=html;$('#sheet').hidden=false;document.body.style.overflow='hidden';}
+const noAuto=r=>r.querySelectorAll('input:not([autocomplete]),textarea:not([autocomplete])').forEach(e=>{e.setAttribute('autocomplete','off');if(e.id==='j-code'||e.id==='s-mail')e.setAttribute('spellcheck','false');});
+function openSheet(html){$('#sheetBody').innerHTML=html;noAuto($('#sheetBody'));$('#sheet').hidden=false;document.body.style.overflow='hidden';}
 function closeSheet(){$('#sheet').hidden=true;document.body.style.overflow='';sel={};}
 const nowHM=()=>hm(Date.now());
 const delBlock=(act,id)=>`<div style="margin-top:18px"><button class="btn block ghost bad" data-act="askDel">Sil</button><div id="delConfirm" hidden><div class="two"><button class="btn danger" data-act="${act}" data-id="${id}">Evet, sil</button><button class="btn" data-act="close">Vazgeç</button></div></div></div>`;
@@ -1053,7 +1054,7 @@ function openSettings(){
   <div class="two"><button class="btn" data-act="copyInvite">Davet linkini kopyala</button><button class="btn" data-act="copyCode">Kodu kopyala</button></div>
   <label>E-posta ile davet (Gmail vb.)</label><input type="email" id="s-mail" inputmode="email" autocomplete="off" placeholder="eşinin e-posta adresi (boş bırakabilirsin)">
   <button class="btn block" style="margin-top:8px" data-act="mailInvite">✉️ E-posta ile davet gönder</button>
-  <label>Başka bir aile koduna katıl</label><input type="text" id="j-code" autocapitalize="off" autocomplete="off" placeholder="xxxx-xxxx-...">
+  <label>Başka bir aile koduna katıl</label><input type="text" id="j-code" autocapitalize="off" autocomplete="off" placeholder="xxxx-xxxx-…">
   <button class="btn block" style="margin-top:10px" data-act="joinFam">Bu koda geç</button>
   <div style="margin-top:10px"><button class="btn block ghost bad" data-act="askDel">Bu telefondan çık</button><div id="delConfirm" hidden><div class="two"><button class="btn danger" data-act="leaveFam">Evet, çık</button><button class="btn" data-act="close">Vazgeç</button></div></div></div>`:''}
   ${FID?`<h3 style="margin-top:26px">Bağlantı bilgisi</h3>
