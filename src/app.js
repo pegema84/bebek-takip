@@ -11,7 +11,7 @@ const FB={
   messagingSenderId:"386088030461",
   appId:"1:386088030461:web:563d1e025a90fe2aab6e94"
 };
-const VERSION='3.8',BUILD='25 Kasım 2026';
+const VERSION='3.9',BUILD='27 Kasım 2026';
 const FAM_KEY='bebektakip.family';
 const COLS=['events','meds','growth','vax','timers','meta','appts','notes','qs'];
 let S={baby:{name:'',birth:''},events:[],meds:[],vax:{},growth:[],timers:{},appts:[],notes:[],qs:[]};
@@ -316,6 +316,12 @@ function saveICS(name,evs){
 }
 
 let avgN=7;
+/* gece = 23:00-09:00 (sadece uyku oranı için); uyku aralığının gece penceresiyle kesişimi */
+function nightMs(a,b){let n=0;const d0=new Date(a);d0.setHours(0,0,0,0);
+  for(let D=new Date(d0.getFullYear(),d0.getMonth(),d0.getDate());D.getTime()<=b+864e5;D=new Date(D.getFullYear(),D.getMonth(),D.getDate()+1)){
+    const w0=new Date(D.getFullYear(),D.getMonth(),D.getDate()-1,23,0).getTime(),w1=new Date(D.getFullYear(),D.getMonth(),D.getDate(),9,0).getTime();
+    const x=Math.min(b,w1)-Math.max(a,w0);if(x>0)n+=x;}
+  return n;}
 function avgStats(n){
   const tk=todayStr(),t0=parseDate(tk),start=new Date(t0.getFullYear(),t0.getMonth(),t0.getDate()-n);
   const evs=S.events.filter(e=>e.type!=='med'&&eT(e)>=start&&eT(e)<t0);
@@ -327,7 +333,7 @@ function avgStats(n){
   const d=days||1,bt=bo.filter(e=>e.type==='bottle');
   return {days,feedN:bo.length/d,ml:sum(bt,'ml')/d,mlPer:bt.length?sum(bt,'ml')/bt.length:0,bm:bt.filter(e=>e.kind!=='Mama').length/d,fm:bt.filter(e=>e.kind==='Mama').length/d,
     wet:di.filter(e=>e.kind!=='dirty').length/d,dirty:di.filter(e=>e.kind!=='wet').length/d,
-    slN:sl.length/d,slDay:sum(sl,'dur')/d,slPer:sl.length?sum(sl,'dur')/sl.length:0,
+    slN:sl.length/d,slDay:sum(sl,'dur')/d,slNight:sl.reduce((x,e)=>x+nightMs(e.t,e.t+(e.dur||0)),0)/d,slPer:sl.length?sum(sl,'dur')/sl.length:0,
     gap:gaps.length?gaps.reduce((a,b)=>a+b,0)/gaps.length:0,puN:pu.length/d,puMl:sum(pu,'ml')/d,
     tMax:te.length?te.reduce((a,b)=>b.c>a.c?b:a):null};
 }
@@ -341,6 +347,7 @@ function avgCard(){
     cell('🥛 Tür',f1(a.bm)+' anne sütü · '+f1(a.fm)+' mama','günde')+
     cell('🧷 Bez',f1(a.wet)+' çiş · '+f1(a.dirty)+' kaka','günde')+
     cell('😴 Uyku',a.slN?dur(a.slDay):'—',a.slN?f1(a.slN)+' uyku · ort. '+dur(a.slPer):'')+
+    (a.slN?(()=>{const nt=Math.min(a.slNight,a.slDay),dy=a.slDay-nt,pc=a.slDay?Math.round(nt/a.slDay*100):0;return cell('🌙 Gece uykusu',dur(nt),'%'+pc+' · 23:00-09:00')+cell('☀️ Gündüz uykusu',dy>=6e4?dur(dy):'—','%'+(100-pc)+' · 09:00-23:00');})():'')+
     (a.gap?cell('⏱ Beslenme aralığı',dur(a.gap),'ortalama'):'')+
     `</div>`;
   h+=`<div class="foot" style="margin-top:8px">Kayıt girilen ${a.days} gün üzerinden, bugün hariç. Kayıt girmediğin günler hesaba katılmaz.</div></div>`;
